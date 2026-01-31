@@ -10,9 +10,11 @@ Started: Sun 01/02/2026  3:48:44.10
 - Use `env` from `$env/dynamic/private` for environment variables
 - Run `bun run check` for typecheck (npm not available in this environment)
 - UI components go in `src/lib/components/`
-- Use Svelte 5 runes: `$state()` for reactive state, `$props()` for component props
+- Use Svelte 5 runes: `$state()` for reactive state, `$props()` for component props, `$effect()` for side effects, `$derived()` for computed values
 - Import types from API files: `import type { CitationClaim } from './api/citations/+server'`
 - Main page layout uses flex container for editor + sidebar side-by-side
+- Editor component uses contenteditable div with DOM manipulation for inline elements (ghost text, highlights)
+- For highlighting text at specific indices, use TreeWalker to find text nodes and splitText() to wrap portions
 
 ---
 
@@ -65,4 +67,25 @@ Started: Sun 01/02/2026  3:48:44.10
   - For keyed each blocks with objects, use a unique identifier like `startIndex` or `url`
   - Interface for component props should be defined and destructured from `$props()`
   - The sidebar state (claims, isDetecting) is managed in the parent page component
+---
+
+## 2026-02-01 - US-004
+- What was implemented:
+  - Added citation highlighting in the Editor component
+  - Claims needing citations are highlighted with a light yellow underline effect
+  - Clicking highlighted text scrolls the sidebar to the corresponding claim
+  - Added activeClaimIndex state to track which claim is selected
+  - Sidebar claim items show an active state when highlighted text is clicked
+  - Highlights are applied/updated via $effect when claims prop changes
+- Files changed:
+  - src/lib/components/Editor.svelte (added highlighting logic, props for claims and callbacks)
+  - src/lib/components/CitationSidebar.svelte (added activeClaimIndex prop, scroll-to functionality, active styling)
+  - src/routes/+page.svelte (wired up claims to editor, added click handler)
+- **Learnings for future iterations:**
+  - Use TreeWalker to iterate over text nodes when applying highlights at specific indices
+  - Apply highlights from end to beginning (descending startIndex) to avoid index shifting
+  - Use CSS `background: linear-gradient(to bottom, transparent 85%, #fef08a 85%)` for underline effect
+  - `$effect` in Svelte 5 runs when reactive dependencies change, good for DOM manipulation
+  - Split text nodes with `node.splitText(offset)` to wrap partial text in highlight spans
+  - Export functions from Svelte 5 components with `export function` for parent access
 ---
