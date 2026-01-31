@@ -12,9 +12,10 @@
 		claims: ClaimWithSuggestions[];
 		isDetecting?: boolean;
 		activeClaimIndex?: number | null;
+		onAddCitation?: (claim: CitationClaim, suggestion: CitationSuggestion, claimIndex: number) => void;
 	}
 
-	let { claims, isDetecting = false, activeClaimIndex = null }: Props = $props();
+	let { claims, isDetecting = false, activeClaimIndex = null, onAddCitation }: Props = $props();
 
 	export function scrollToClaimByIndex(index: number) {
 		const element = document.getElementById(`claim-${index}`);
@@ -70,9 +71,18 @@
 								<ul class="suggestions-list">
 									{#each suggestions as suggestion (suggestion.url)}
 										<li class="suggestion-item">
-											<a href={suggestion.url} target="_blank" rel="noopener noreferrer" class="suggestion-title">
-												{suggestion.title}
-											</a>
+											<div class="suggestion-header">
+												<a href={suggestion.url} target="_blank" rel="noopener noreferrer" class="suggestion-title">
+													{suggestion.title}
+												</a>
+												<button
+													class="add-btn"
+													onclick={() => onAddCitation?.(claim, suggestion, index)}
+													title="Add this citation"
+												>
+													Add
+												</button>
+											</div>
 											<p class="suggestion-meta">
 												{suggestion.authors.slice(0, 2).join(', ')}{suggestion.authors.length > 2 ? ' et al.' : ''} ({suggestion.year})
 											</p>
@@ -254,18 +264,46 @@
 		border-bottom: none;
 	}
 
+	.suggestion-header {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 0.5rem;
+		margin-bottom: 0.25rem;
+	}
+
 	.suggestion-title {
-		display: block;
+		flex: 1;
 		font-size: 0.8125rem;
 		font-weight: 500;
 		color: #2563eb;
 		text-decoration: none;
 		line-height: 1.4;
-		margin-bottom: 0.25rem;
 	}
 
 	.suggestion-title:hover {
 		text-decoration: underline;
+	}
+
+	.add-btn {
+		flex-shrink: 0;
+		padding: 0.25rem 0.5rem;
+		font-size: 0.6875rem;
+		font-weight: 600;
+		color: #ffffff;
+		background: #6366f1;
+		border: none;
+		border-radius: 0.25rem;
+		cursor: pointer;
+		transition: background 0.15s ease;
+	}
+
+	.add-btn:hover {
+		background: #4f46e5;
+	}
+
+	.add-btn:active {
+		background: #4338ca;
 	}
 
 	.suggestion-meta {

@@ -31,6 +31,67 @@
 		return getTextContent();
 	}
 
+	// Insert inline citation at a specific position (end of claim)
+	export function insertCitationAtIndex(endIndex: number, citationNumber: number): boolean {
+		const citationText = `[${citationNumber}]`;
+
+		// First remove any existing highlights to work with clean text
+		removeHighlights();
+
+		const walker = document.createTreeWalker(
+			editorElement,
+			NodeFilter.SHOW_TEXT,
+			{
+				acceptNode: (node) => {
+					if (node.parentElement?.classList.contains(GHOST_CLASS)) {
+						return NodeFilter.FILTER_REJECT;
+					}
+					return NodeFilter.FILTER_ACCEPT;
+				}
+			}
+		);
+
+		let currentOffset = 0;
+		let node: Text | null;
+
+		while ((node = walker.nextNode() as Text | null)) {
+			const nodeLength = node.length;
+			const nodeStart = currentOffset;
+			const nodeEnd = currentOffset + nodeLength;
+
+			// Check if this node contains our target position
+			if (nodeStart <= endIndex && endIndex <= nodeEnd) {
+				const relativeOffset = endIndex - nodeStart;
+
+				// Split the text node at the insertion point
+				if (relativeOffset < node.length) {
+					node.splitText(relativeOffset);
+				}
+
+				// Create citation marker span
+				const citationSpan = document.createElement('span');
+				citationSpan.className = 'inline-citation';
+				citationSpan.textContent = citationText;
+				citationSpan.contentEditable = 'false';
+
+				// Insert after the current node
+				const parent = node.parentNode;
+				if (parent) {
+					parent.insertBefore(citationSpan, node.nextSibling);
+				}
+
+				// Re-apply highlights for remaining claims
+				applyHighlights();
+
+				return true;
+			}
+
+			currentOffset += nodeLength;
+		}
+
+		return false;
+	}
+
 	function removeHighlights() {
 		const highlights = editorElement.querySelectorAll(`.${HIGHLIGHT_CLASS}`);
 		highlights.forEach((el) => {
@@ -334,6 +395,16 @@
 
 	.editor :global(.citation-highlight:hover) {
 		background: linear-gradient(to bottom, transparent 85%, #fde047 85%);
+	}
+
+	.editor :global(.inline-citation) {
+		color: #6366f1;
+		font-size: 0.85em;
+		font-weight: 600;
+		vertical-align: super;
+		font-family: ui-monospace, monospace;
+		cursor: default;
+		user-select: none;
 	}
 
 	.loading-indicator {

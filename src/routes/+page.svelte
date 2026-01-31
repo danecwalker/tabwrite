@@ -10,9 +10,16 @@
 		isLoading: boolean;
 	}
 
+	interface BibliographyEntry {
+		number: number;
+		suggestion: CitationSuggestion;
+	}
+
 	let claimsWithSuggestions = $state<ClaimWithSuggestions[]>([]);
 	let isDetecting = $state(false);
 	let activeClaimIndex = $state<number | null>(null);
+	let bibliography = $state<BibliographyEntry[]>([]);
+	let editorRef = $state<{ insertCitationAtIndex: (endIndex: number, citationNumber: number) => boolean } | null>(null);
 
 	// Extract just the claims for the editor
 	let claims = $derived(claimsWithSuggestions.map((c) => c.claim));
@@ -23,6 +30,22 @@
 		setTimeout(() => {
 			activeClaimIndex = null;
 		}, 2000);
+	}
+
+	function handleAddCitation(claim: CitationClaim, suggestion: CitationSuggestion, claimIndex: number) {
+		// Calculate next citation number
+		const citationNumber = bibliography.length + 1;
+
+		// Insert inline citation at the end of the claim
+		const inserted = editorRef?.insertCitationAtIndex(claim.endIndex, citationNumber);
+
+		if (inserted) {
+			// Add to bibliography
+			bibliography = [...bibliography, { number: citationNumber, suggestion }];
+
+			// Remove the claim from the list (removes highlight)
+			claimsWithSuggestions = claimsWithSuggestions.filter((_, i) => i !== claimIndex);
+		}
 	}
 </script>
 
@@ -37,9 +60,14 @@
 	</header>
 	<div class="content-layout">
 		<div class="editor-area">
-			<Editor {claims} onClaimClick={handleClaimClick} />
+			<Editor bind:this={editorRef} {claims} onClaimClick={handleClaimClick} />
 		</div>
-		<CitationSidebar claims={claimsWithSuggestions} {isDetecting} {activeClaimIndex} />
+		<CitationSidebar
+			claims={claimsWithSuggestions}
+			{isDetecting}
+			{activeClaimIndex}
+			onAddCitation={handleAddCitation}
+		/>
 	</div>
 </main>
 
