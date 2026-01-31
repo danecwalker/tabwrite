@@ -9,6 +9,10 @@ Started: Sun 01/02/2026  3:48:44.10
 - Export `RequestHandler` type from `./$types` for type safety
 - Use `env` from `$env/dynamic/private` for environment variables
 - Run `bun run check` for typecheck (npm not available in this environment)
+- UI components go in `src/lib/components/`
+- Use Svelte 5 runes: `$state()` for reactive state, `$props()` for component props
+- Import types from API files: `import type { CitationClaim } from './api/citations/+server'`
+- Main page layout uses flex container for editor + sidebar side-by-side
 
 ---
 
@@ -26,4 +30,39 @@ Started: Sun 01/02/2026  3:48:44.10
   - Export types from API files (e.g., `CitationClaim`) for use in UI components
   - Groq API model used: `llama-3.1-8b-instant`
   - The system uses Svelte 5 with SvelteKit 2
---- 
+---
+
+## 2026-02-01 - US-002
+- What was implemented:
+  - Created POST /api/citations/search endpoint for finding academic sources
+  - Accepts a query string and uses LLM to generate plausible academic citations
+  - Returns array of `{ title, authors, year, url, relevance }`
+  - Returns 3-5 citation suggestions per query
+  - Validates response structure with proper TypeScript type guards
+- Files changed:
+  - src/routes/api/citations/search/+server.ts (new file)
+- **Learnings for future iterations:**
+  - Nested API routes work with directories: `/api/citations/search` lives in `src/routes/api/citations/search/+server.ts`
+  - Export `CitationSuggestion` type for UI components to consume
+  - Higher temperature (0.7) used for more varied citation suggestions vs lower (0.2) for detection
+---
+
+## 2026-02-01 - US-003
+- What was implemented:
+  - Created CitationSidebar.svelte component for displaying citation suggestions
+  - Sidebar appears on the right side of the editor in a flex layout
+  - Shows list of detected claims with numbered badges
+  - Each claim displays suggested sources with title, authors, year, and relevance
+  - Sidebar is scrollable (overflow-y: auto) when content overflows
+  - Clean minimal design with light grays, serif font, and subtle borders matching editor aesthetic
+  - Includes loading states for detection and source fetching
+  - Empty state with helpful text when no claims detected
+- Files changed:
+  - src/lib/components/CitationSidebar.svelte (new file)
+  - src/routes/+page.svelte (modified to include sidebar in flex layout)
+- **Learnings for future iterations:**
+  - Svelte 5 props use `let { propName }: Props = $props()` syntax
+  - For keyed each blocks with objects, use a unique identifier like `startIndex` or `url`
+  - Interface for component props should be defined and destructured from `$props()`
+  - The sidebar state (claims, isDetecting) is managed in the parent page component
+---
