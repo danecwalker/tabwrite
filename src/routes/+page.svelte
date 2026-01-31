@@ -1,5 +1,17 @@
 <script lang="ts">
 	import Editor from '$lib/components/Editor.svelte';
+	import CitationSidebar from '$lib/components/CitationSidebar.svelte';
+	import type { CitationClaim } from './api/citations/+server';
+	import type { CitationSuggestion } from './api/citations/search/+server';
+
+	interface ClaimWithSuggestions {
+		claim: CitationClaim;
+		suggestions: CitationSuggestion[];
+		isLoading: boolean;
+	}
+
+	let claimsWithSuggestions = $state<ClaimWithSuggestions[]>([]);
+	let isDetecting = $state(false);
 </script>
 
 <svelte:head>
@@ -11,7 +23,12 @@
 	<header>
 		<h1>TabWrite</h1>
 	</header>
-	<Editor />
+	<div class="content-layout">
+		<div class="editor-area">
+			<Editor />
+		</div>
+		<CitationSidebar claims={claimsWithSuggestions} {isDetecting} />
+	</div>
 </main>
 
 <style>
@@ -32,5 +49,17 @@
 		font-weight: 400;
 		color: #374151;
 		letter-spacing: 0.05em;
+	}
+
+	.content-layout {
+		display: flex;
+		gap: 0;
+		max-width: 1200px;
+		margin: 0 auto;
+	}
+
+	.editor-area {
+		flex: 1;
+		min-width: 0;
 	}
 </style>
