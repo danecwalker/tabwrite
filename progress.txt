@@ -1,3 +1,29 @@
-# Ralph Progress Log 
-Started: Sun 01/02/2026  3:48:44.10 
+# Ralph Progress Log
+Started: Sun 01/02/2026  3:48:44.10
+---
+
+## Codebase Patterns
+- API endpoints go in `src/routes/api/{endpoint-name}/+server.ts`
+- Use `json()` from `@sveltejs/kit` for JSON responses
+- OpenAI client with Groq baseURL: `new OpenAI({ apiKey, baseURL: "https://api.groq.com/openai/v1" })`
+- Export `RequestHandler` type from `./$types` for type safety
+- Use `env` from `$env/dynamic/private` for environment variables
+- Run `bun run check` for typecheck (npm not available in this environment)
+
+---
+
+## 2026-02-01 - US-001
+- What was implemented:
+  - Created POST /api/citations endpoint for citation detection
+  - Accepts essay text and analyzes for citation-worthy claims using LLM
+  - Returns array of `{ claim, searchQuery, startIndex, endIndex }`
+  - Uses LLM to identify statistics, factual claims, and quotations
+  - Validates and corrects indices by finding actual text positions
+- Files changed:
+  - src/routes/api/citations/+server.ts (new file)
+- **Learnings for future iterations:**
+  - LLM may return incorrect indices, so we verify by finding the actual substring position
+  - Export types from API files (e.g., `CitationClaim`) for use in UI components
+  - Groq API model used: `llama-3.1-8b-instant`
+  - The system uses Svelte 5 with SvelteKit 2
 --- 
