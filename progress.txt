@@ -15,6 +15,8 @@ Started: Sun 01/02/2026  3:48:44.10
 - Main page layout uses flex container for editor + sidebar side-by-side
 - Editor component uses contenteditable div with DOM manipulation for inline elements (ghost text, highlights)
 - For highlighting text at specific indices, use TreeWalker to find text nodes and splitText() to wrap portions
+- Use `bind:this` to get component references for calling exported functions
+- Interfaces should NOT use `export` keyword inside regular Svelte script tags
 
 ---
 
@@ -88,4 +90,24 @@ Started: Sun 01/02/2026  3:48:44.10
   - `$effect` in Svelte 5 runs when reactive dependencies change, good for DOM manipulation
   - Split text nodes with `node.splitText(offset)` to wrap partial text in highlight spans
   - Export functions from Svelte 5 components with `export function` for parent access
+---
+
+## 2026-02-01 - US-005
+- What was implemented:
+  - Added "Add" button to each citation suggestion in the sidebar
+  - Clicking "Add" inserts an inline citation marker [n] at the end of the claim text
+  - Created insertCitationAtIndex() function in Editor to insert citations at specific positions
+  - Added bibliography state management in +page.svelte with BibliographyEntry type
+  - Citation numbers auto-increment based on bibliography.length + 1
+  - After adding a citation, the claim is removed from claimsWithSuggestions (removing its highlight)
+  - Styled inline citations as superscript purple markers (non-editable spans)
+- Files changed:
+  - src/lib/components/CitationSidebar.svelte (added onAddCitation prop, Add button with styling)
+  - src/lib/components/Editor.svelte (added insertCitationAtIndex export function, inline-citation CSS)
+  - src/routes/+page.svelte (added bibliography state, handleAddCitation handler, editorRef binding)
+- **Learnings for future iterations:**
+  - Use `bind:this` to get reference to Svelte 5 components for calling exported functions
+  - Set `contentEditable="false"` on inline citation spans to prevent user editing
+  - Remove claims from state array to automatically remove their highlights (reactive updates)
+  - Interfaces in Svelte 5 should NOT use `export` keyword inside regular script tag
 ---
