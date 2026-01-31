@@ -131,3 +131,24 @@ Started: Sun 01/02/2026  3:48:44.10
   - Mutate array entries in place before reassigning to state variable for proper reactivity
   - Export multiple functions from components for different operations (insert, update, remove)
 ---
+
+## 2026-02-01 - US-007
+- What was implemented:
+  - Created `createCitationDetector()` utility with 2-second debounce for citation detection
+  - Tracks `lastSentText` to skip API calls when text hasn't changed
+  - Cancels pending timeouts and aborts in-flight requests when user continues typing
+  - Added `onTextChange` prop to Editor component to notify parent of text changes
+  - Integrated detection flow in +page.svelte with `handleTextChange()` and `handleDetectionComplete()`
+  - Automatically fetches suggestions for each detected claim using AbortController
+  - Loading indicator ("Scanning...") appears in sidebar while detection is in progress
+- Files changed:
+  - src/lib/debounce.ts (added createCitationDetector with debounce, cancel, and reset methods)
+  - src/lib/components/Editor.svelte (added onTextChange prop, calls it in handleInput)
+  - src/routes/+page.svelte (added citation detector, text change handler, suggestion fetching)
+- **Learnings for future iterations:**
+  - Use AbortController with fetch signal for cancellable API requests
+  - Pattern: Create utility functions that return objects with methods (detect, cancel, reset) for stateful operations
+  - Debounced detectors should track lastSentText to avoid redundant calls
+  - Pass AbortSignal through to child fetch calls for proper cascading cancellation
+  - The sidebar already had isDetecting display logic from US-003, just needed to wire it up
+---
