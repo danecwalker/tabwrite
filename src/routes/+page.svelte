@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Editor from '$lib/components/Editor.svelte';
 	import CitationSidebar from '$lib/components/CitationSidebar.svelte';
+	import Bibliography from '$lib/components/Bibliography.svelte';
 	import type { CitationClaim } from './api/citations/+server';
 	import type { CitationSuggestion } from './api/citations/search/+server';
 
@@ -15,11 +16,17 @@
 		suggestion: CitationSuggestion;
 	}
 
+	interface EditorRef {
+		insertCitationAtIndex: (endIndex: number, citationNumber: number) => boolean;
+		updateCitationNumbers: (oldToNew: Map<number, number>) => void;
+		removeCitationByNumber: (citationNumber: number) => void;
+	}
+
 	let claimsWithSuggestions = $state<ClaimWithSuggestions[]>([]);
 	let isDetecting = $state(false);
 	let activeClaimIndex = $state<number | null>(null);
 	let bibliography = $state<BibliographyEntry[]>([]);
-	let editorRef = $state<{ insertCitationAtIndex: (endIndex: number, citationNumber: number) => boolean } | null>(null);
+	let editorRef = $state<EditorRef | null>(null);
 
 	// Extract just the claims for the editor
 	let claims = $derived(claimsWithSuggestions.map((c) => c.claim));
@@ -47,6 +54,34 @@
 			claimsWithSuggestions = claimsWithSuggestions.filter((_, i) => i !== claimIndex);
 		}
 	}
+
+	function handleRemoveCitation(index: number) {
+		const removedEntry = bibliography[index];
+		const removedNumber = removedEntry.number;
+
+		// Remove the inline citation from the editor
+		editorRef?.removeCitationByNumber(removedNumber);
+
+		// Remove from bibliography
+		const newBibliography = bibliography.filter((_, i) => i !== index);
+
+		// Create mapping for renumbering: old number -> new number
+		const oldToNew = new Map<number, number>();
+		newBibliography.forEach((entry, i) => {
+			const newNumber = i + 1;
+			if (entry.number !== newNumber) {
+				oldToNew.set(entry.number, newNumber);
+				entry.number = newNumber;
+			}
+		});
+
+		// Update inline citations in the editor if needed
+		if (oldToNew.size > 0) {
+			editorRef?.updateCitationNumbers(oldToNew);
+		}
+
+		bibliography = newBibliography;
+	}
 </script>
 
 <svelte:head>
@@ -61,6 +96,9 @@
 	<div class="content-layout">
 		<div class="editor-area">
 			<Editor bind:this={editorRef} {claims} onClaimClick={handleClaimClick} />
+			<div class="bibliography-area">
+				<Bibliography entries={bibliography} onRemove={handleRemoveCitation} />
+			</div>
 		</div>
 		<CitationSidebar
 			claims={claimsWithSuggestions}
@@ -101,5 +139,11 @@
 	.editor-area {
 		flex: 1;
 		min-width: 0;
+	}
+
+	.bibliography-area {
+		max-width: 700px;
+		margin: 0 auto;
+		padding: 0 2rem;
 	}
 </style>

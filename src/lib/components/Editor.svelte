@@ -31,6 +31,33 @@
 		return getTextContent();
 	}
 
+	// Update all inline citation numbers (for renumbering after deletion)
+	export function updateCitationNumbers(oldToNew: Map<number, number>): void {
+		const citations = editorElement.querySelectorAll('.inline-citation');
+		citations.forEach((citation) => {
+			const text = citation.textContent || '';
+			const match = text.match(/\[(\d+)\]/);
+			if (match) {
+				const oldNum = parseInt(match[1], 10);
+				const newNum = oldToNew.get(oldNum);
+				if (newNum !== undefined) {
+					citation.textContent = `[${newNum}]`;
+				}
+			}
+		});
+	}
+
+	// Remove an inline citation by its number
+	export function removeCitationByNumber(citationNumber: number): void {
+		const citations = editorElement.querySelectorAll('.inline-citation');
+		citations.forEach((citation) => {
+			const text = citation.textContent || '';
+			if (text === `[${citationNumber}]`) {
+				citation.remove();
+			}
+		});
+	}
+
 	// Insert inline citation at a specific position (end of claim)
 	export function insertCitationAtIndex(endIndex: number, citationNumber: number): boolean {
 		const citationText = `[${citationNumber}]`;
