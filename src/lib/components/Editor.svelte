@@ -18,12 +18,17 @@
 	const fetcher = createDebouncedFetcher(500);
 	const GHOST_CLASS = 'ghost-suggestion';
 	const HIGHLIGHT_CLASS = 'citation-highlight';
+	const INLINE_CITATION_CLASS = 'inline-citation';
 
 	function getTextContent(): string {
-		// Get text content excluding ghost text (highlights are fine since we just read their text)
+		// Get text content excluding ghost text and inline citations
+		// (highlights are fine since we just read their text)
 		const clone = editorElement.cloneNode(true) as HTMLElement;
 		const ghostElements = clone.querySelectorAll(`.${GHOST_CLASS}`);
 		ghostElements.forEach((el) => el.remove());
+		// Also exclude inline citations so indices match the original text
+		const citationElements = clone.querySelectorAll(`.${INLINE_CITATION_CLASS}`);
+		citationElements.forEach((el) => el.remove());
 		return clone.innerText || '';
 	}
 
@@ -34,7 +39,7 @@
 
 	// Update all inline citation numbers (for renumbering after deletion)
 	export function updateCitationNumbers(oldToNew: Map<number, number>): void {
-		const citations = editorElement.querySelectorAll('.inline-citation');
+		const citations = editorElement.querySelectorAll(`.${INLINE_CITATION_CLASS}`);
 		citations.forEach((citation) => {
 			const text = citation.textContent || '';
 			const match = text.match(/\[(\d+)\]/);
@@ -50,13 +55,32 @@
 
 	// Remove an inline citation by its number
 	export function removeCitationByNumber(citationNumber: number): void {
-		const citations = editorElement.querySelectorAll('.inline-citation');
+		const citations = editorElement.querySelectorAll(`.${INLINE_CITATION_CLASS}`);
 		citations.forEach((citation) => {
 			const text = citation.textContent || '';
 			if (text === `[${citationNumber}]`) {
 				citation.remove();
 			}
 		});
+	}
+
+	// Get the count of inline citations currently in the editor
+	export function getInlineCitationCount(): number {
+		return editorElement.querySelectorAll(`.${INLINE_CITATION_CLASS}`).length;
+	}
+
+	// Get all inline citation numbers currently in the editor (for state verification)
+	export function getInlineCitationNumbers(): number[] {
+		const citations = editorElement.querySelectorAll(`.${INLINE_CITATION_CLASS}`);
+		const numbers: number[] = [];
+		citations.forEach((citation) => {
+			const text = citation.textContent || '';
+			const match = text.match(/\[(\d+)\]/);
+			if (match) {
+				numbers.push(parseInt(match[1], 10));
+			}
+		});
+		return numbers.sort((a, b) => a - b);
 	}
 
 	// Insert inline citation at a specific position (end of claim)
@@ -71,7 +95,10 @@
 			NodeFilter.SHOW_TEXT,
 			{
 				acceptNode: (node) => {
-					if (node.parentElement?.classList.contains(GHOST_CLASS)) {
+					// Skip ghost text and inline citations
+					const parent = node.parentElement;
+					if (parent?.classList.contains(GHOST_CLASS) ||
+						parent?.classList.contains(INLINE_CITATION_CLASS)) {
 						return NodeFilter.FILTER_REJECT;
 					}
 					return NodeFilter.FILTER_ACCEPT;
@@ -98,7 +125,7 @@
 
 				// Create citation marker span
 				const citationSpan = document.createElement('span');
-				citationSpan.className = 'inline-citation';
+				citationSpan.className = INLINE_CITATION_CLASS;
 				citationSpan.textContent = citationText;
 				citationSpan.contentEditable = 'false';
 
@@ -169,8 +196,10 @@
 				NodeFilter.SHOW_TEXT,
 				{
 					acceptNode: (node) => {
-						// Skip ghost text
-						if (node.parentElement?.classList.contains(GHOST_CLASS)) {
+						// Skip ghost text and inline citations
+						const parent = node.parentElement;
+						if (parent?.classList.contains(GHOST_CLASS) ||
+							parent?.classList.contains(INLINE_CITATION_CLASS)) {
 							return NodeFilter.FILTER_REJECT;
 						}
 						return NodeFilter.FILTER_ACCEPT;

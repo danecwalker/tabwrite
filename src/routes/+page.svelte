@@ -23,6 +23,8 @@
 		updateCitationNumbers: (oldToNew: Map<number, number>) => void;
 		removeCitationByNumber: (citationNumber: number) => void;
 		getText: () => string;
+		getInlineCitationCount: () => number;
+		getInlineCitationNumbers: () => number[];
 	}
 
 	let claimsWithSuggestions = $state<ClaimWithSuggestions[]>([]);
