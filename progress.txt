@@ -111,3 +111,23 @@ Started: Sun 01/02/2026  3:48:44.10
   - Remove claims from state array to automatically remove their highlights (reactive updates)
   - Interfaces in Svelte 5 should NOT use `export` keyword inside regular script tag
 ---
+
+## 2026-02-01 - US-006
+- What was implemented:
+  - Created Bibliography.svelte component for displaying formatted citation list
+  - Bibliography appears below the editor area with a clean, numbered list format
+  - Each entry shows: [n] Author(s). Title (linked). Year. URL
+  - Delete button (×) allows removing citations from the bibliography
+  - When a citation is removed, remaining citations are renumbered in both bibliography and editor
+  - Added updateCitationNumbers() and removeCitationByNumber() exports to Editor component
+  - handleRemoveCitation() in page component manages the full removal/renumbering flow
+- Files changed:
+  - src/lib/components/Bibliography.svelte (new file)
+  - src/lib/components/Editor.svelte (added updateCitationNumbers and removeCitationByNumber exports)
+  - src/routes/+page.svelte (added Bibliography component, EditorRef interface, handleRemoveCitation handler)
+- **Learnings for future iterations:**
+  - Query inline-citation elements with querySelectorAll and iterate to update/remove citation markers
+  - Use Map<number, number> for old-to-new number mapping when renumbering citations
+  - Mutate array entries in place before reassigning to state variable for proper reactivity
+  - Export multiple functions from components for different operations (insert, update, remove)
+---
