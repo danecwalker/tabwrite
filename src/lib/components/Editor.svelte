@@ -1,6 +1,14 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { createDebouncedFetcher } from '$lib/debounce';
+	import type { CitationClaim } from '../../routes/api/citations/+server';
+
+	interface Props {
+		claims?: CitationClaim[];
+		onClaimClick?: (claim: CitationClaim, index: number) => void;
+	}
+
+	let { claims = [], onClaimClick }: Props = $props();
 
 	let editorElement: HTMLDivElement;
 	let pendingSuggestion = $state('');
@@ -8,14 +16,138 @@
 
 	const fetcher = createDebouncedFetcher(500);
 	const GHOST_CLASS = 'ghost-suggestion';
+	const HIGHLIGHT_CLASS = 'citation-highlight';
 
 	function getTextContent(): string {
-		// Get text content excluding ghost text
+		// Get text content excluding ghost text (highlights are fine since we just read their text)
 		const clone = editorElement.cloneNode(true) as HTMLElement;
 		const ghostElements = clone.querySelectorAll(`.${GHOST_CLASS}`);
 		ghostElements.forEach((el) => el.remove());
 		return clone.innerText || '';
 	}
+
+	// Expose text content getter for parent components
+	export function getText(): string {
+		return getTextContent();
+	}
+
+	function removeHighlights() {
+		const highlights = editorElement.querySelectorAll(`.${HIGHLIGHT_CLASS}`);
+		highlights.forEach((el) => {
+			const parent = el.parentNode;
+			if (parent) {
+				// Replace highlight span with its text content
+				const textNode = document.createTextNode(el.textContent || '');
+				parent.replaceChild(textNode, el);
+				// Normalize to merge adjacent text nodes
+				parent.normalize();
+			}
+		});
+	}
+
+	function applyHighlights() {
+		if (!claims || claims.length === 0) return;
+
+		// Save cursor position
+		const selection = window.getSelection();
+		let savedOffset = 0;
+		let savedNode: Node | null = null;
+
+		if (selection && selection.rangeCount > 0) {
+			const range = selection.getRangeAt(0);
+			savedNode = range.startContainer;
+			savedOffset = range.startOffset;
+		}
+
+		// Remove existing highlights first
+		removeHighlights();
+
+		// Get the plain text content
+		const text = getTextContent();
+
+		// Sort claims by startIndex (descending) to apply from end to beginning
+		// This prevents index shifting issues
+		const sortedClaims = [...claims].sort((a, b) => b.startIndex - a.startIndex);
+
+		// Apply highlights
+		for (const claim of sortedClaims) {
+			const { startIndex, endIndex } = claim;
+			if (startIndex < 0 || endIndex > text.length || startIndex >= endIndex) continue;
+
+			// Find the text node(s) containing this range
+			const walker = document.createTreeWalker(
+				editorElement,
+				NodeFilter.SHOW_TEXT,
+				{
+					acceptNode: (node) => {
+						// Skip ghost text
+						if (node.parentElement?.classList.contains(GHOST_CLASS)) {
+							return NodeFilter.FILTER_REJECT;
+						}
+						return NodeFilter.FILTER_ACCEPT;
+					}
+				}
+			);
+
+			let currentOffset = 0;
+			let node: Text | null;
+
+			while ((node = walker.nextNode() as Text | null)) {
+				const nodeLength = node.length;
+				const nodeStart = currentOffset;
+				const nodeEnd = currentOffset + nodeLength;
+
+				// Check if this node contains the start of our highlight
+				if (nodeStart <= startIndex && startIndex < nodeEnd) {
+					const relativeStart = startIndex - nodeStart;
+					const highlightLength = Math.min(endIndex - startIndex, nodeLength - relativeStart);
+
+					// Split the text node if needed
+					const claimIndex = claims.indexOf(claim);
+
+					// Create highlight span
+					const highlightSpan = document.createElement('span');
+					highlightSpan.className = HIGHLIGHT_CLASS;
+					highlightSpan.dataset.claimIndex = String(claimIndex);
+					highlightSpan.addEventListener('click', () => {
+						onClaimClick?.(claim, claimIndex);
+					});
+
+					// If highlight doesn't start at beginning of node, split
+					if (relativeStart > 0) {
+						node.splitText(relativeStart);
+						node = node.nextSibling as Text;
+					}
+
+					// If highlight doesn't go to end of node, split
+					if (highlightLength < node.length) {
+						node.splitText(highlightLength);
+					}
+
+					// Wrap the node in highlight span
+					const parent = node.parentNode;
+					if (parent) {
+						parent.insertBefore(highlightSpan, node);
+						highlightSpan.appendChild(node);
+					}
+
+					break;
+				}
+
+				currentOffset += nodeLength;
+			}
+		}
+
+		// Restore cursor position (simplified - just focus)
+		editorElement.focus();
+	}
+
+	// Apply highlights when claims change
+	$effect(() => {
+		if (claims && editorElement) {
+			applyHighlights();
+		}
+	});
 
 	function removeGhostText() {
 		const ghostElements = editorElement.querySelectorAll(`.${GHOST_CLASS}`);
@@ -192,6 +324,16 @@
 		color: #9ca3af;
 		pointer-events: none;
 		user-select: none;
+	}
+
+	.editor :global(.citation-highlight) {
+		background: linear-gradient(to bottom, transparent 85%, #fef08a 85%);
+		cursor: pointer;
+		border-radius: 1px;
+	}
+
+	.editor :global(.citation-highlight:hover) {
+		background: linear-gradient(to bottom, transparent 85%, #fde047 85%);
 	}
 
 	.loading-indicator {

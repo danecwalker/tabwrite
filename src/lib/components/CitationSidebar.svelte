@@ -11,9 +11,24 @@
 	interface Props {
 		claims: ClaimWithSuggestions[];
 		isDetecting?: boolean;
+		activeClaimIndex?: number | null;
 	}
 
-	let { claims, isDetecting = false }: Props = $props();
+	let { claims, isDetecting = false, activeClaimIndex = null }: Props = $props();
+
+	export function scrollToClaimByIndex(index: number) {
+		const element = document.getElementById(`claim-${index}`);
+		if (element) {
+			element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+		}
+	}
+
+	// Auto-scroll when activeClaimIndex changes
+	$effect(() => {
+		if (activeClaimIndex !== null && activeClaimIndex >= 0) {
+			scrollToClaimByIndex(activeClaimIndex);
+		}
+	});
 </script>
 
 <aside class="sidebar">
@@ -37,7 +52,7 @@
 		{:else}
 			<ul class="claims-list">
 				{#each claims as { claim, suggestions, isLoading }, index (claim.startIndex)}
-					<li class="claim-item">
+					<li class="claim-item" id="claim-{index}" class:active={activeClaimIndex === index}>
 						<div class="claim-header">
 							<span class="claim-number">{index + 1}</span>
 							<p class="claim-text">"{claim.claim}"</p>
@@ -155,6 +170,12 @@
 		border: 1px solid #e5e7eb;
 		border-radius: 0.5rem;
 		overflow: hidden;
+		transition: border-color 0.2s ease, box-shadow 0.2s ease;
+	}
+
+	.claim-item.active {
+		border-color: #fde047;
+		box-shadow: 0 0 0 2px #fef08a;
 	}
 
 	.claim-header {

@@ -12,6 +12,18 @@
 
 	let claimsWithSuggestions = $state<ClaimWithSuggestions[]>([]);
 	let isDetecting = $state(false);
+	let activeClaimIndex = $state<number | null>(null);
+
+	// Extract just the claims for the editor
+	let claims = $derived(claimsWithSuggestions.map((c) => c.claim));
+
+	function handleClaimClick(claim: CitationClaim, index: number) {
+		activeClaimIndex = index;
+		// Clear active state after a short delay
+		setTimeout(() => {
+			activeClaimIndex = null;
+		}, 2000);
+	}
 </script>
 
 <svelte:head>
@@ -25,9 +37,9 @@
 	</header>
 	<div class="content-layout">
 		<div class="editor-area">
-			<Editor />
+			<Editor {claims} onClaimClick={handleClaimClick} />
 		</div>
-		<CitationSidebar claims={claimsWithSuggestions} {isDetecting} />
+		<CitationSidebar claims={claimsWithSuggestions} {isDetecting} {activeClaimIndex} />
 	</div>
 </main>
 
