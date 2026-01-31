@@ -17,6 +17,7 @@ Started: Sun 01/02/2026  3:48:44.10
 - For highlighting text at specific indices, use TreeWalker to find text nodes and splitText() to wrap portions
 - Use `bind:this` to get component references for calling exported functions
 - Interfaces should NOT use `export` keyword inside regular Svelte script tags
+- When working with contenteditable and inline elements, exclude non-content elements (citations, ghost text) from text/index calculations
 
 ---
 
@@ -151,4 +152,22 @@ Started: Sun 01/02/2026  3:48:44.10
   - Debounced detectors should track lastSentText to avoid redundant calls
   - Pass AbortSignal through to child fetch calls for proper cascading cancellation
   - The sidebar already had isDetecting display logic from US-003, just needed to wire it up
+---
+
+## 2026-02-01 - US-008
+- What was implemented:
+  - Fixed citation persistence during text edits by excluding inline citations from text content calculations
+  - Updated all TreeWalker filters to skip inline-citation spans when computing text offsets
+  - Added INLINE_CITATION_CLASS constant for consistency across the codebase
+  - Added getInlineCitationCount() and getInlineCitationNumbers() exports for state verification
+  - Updated EditorRef interface to include new citation query functions
+  - Citations now survive text edits without index corruption
+- Files changed:
+  - src/lib/components/Editor.svelte (updated getTextContent, TreeWalker filters, added citation query functions)
+  - src/routes/+page.svelte (updated EditorRef interface)
+- **Learnings for future iterations:**
+  - When working with contenteditable and inline elements (like citation markers), exclude them from text content calculations
+  - TreeWalker filters must skip all non-content elements (ghost text, citations) to maintain consistent indices
+  - Use constants for CSS class names to avoid typos and enable easier refactoring
+  - Adding utility exports for state verification helps with debugging and future export/import features
 ---
