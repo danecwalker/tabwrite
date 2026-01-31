@@ -1,7 +1,9 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import Editor from '$lib/components/Editor.svelte';
 	import CitationSidebar from '$lib/components/CitationSidebar.svelte';
 	import Bibliography from '$lib/components/Bibliography.svelte';
+	import { createCitationDetector } from '$lib/debounce';
 	import type { CitationClaim } from './api/citations/+server';
 	import type { CitationSuggestion } from './api/citations/search/+server';
 
@@ -20,6 +22,7 @@
 		insertCitationAtIndex: (endIndex: number, citationNumber: number) => boolean;
 		updateCitationNumbers: (oldToNew: Map<number, number>) => void;
 		removeCitationByNumber: (citationNumber: number) => void;
+		getText: () => string;
 	}
 
 	let claimsWithSuggestions = $state<ClaimWithSuggestions[]>([]);
@@ -28,8 +31,86 @@
 	let bibliography = $state<BibliographyEntry[]>([]);
 	let editorRef = $state<EditorRef | null>(null);
 
+	// Citation detector with 2-second debounce
+	const citationDetector = createCitationDetector(2000);
+
 	// Extract just the claims for the editor
 	let claims = $derived(claimsWithSuggestions.map((c) => c.claim));
+
+	// Fetch suggestions for a single claim
+	async function fetchSuggestionsForClaim(claim: CitationClaim, index: number, signal: AbortSignal) {
+		try {
+			const response = await fetch('/api/citations/search', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ query: claim.searchQuery }),
+				signal
+			});
+
+			if (response.ok) {
+				const data = await response.json();
+				// Update the specific claim with suggestions
+				claimsWithSuggestions = claimsWithSuggestions.map((c, i) =>
+					i === index ? { ...c, suggestions: data.suggestions || [], isLoading: false } : c
+				);
+			} else {
+				claimsWithSuggestions = claimsWithSuggestions.map((c, i) =>
+					i === index ? { ...c, suggestions: [], isLoading: false } : c
+				);
+			}
+		} catch (e) {
+			if (e instanceof Error && e.name !== 'AbortError') {
+				console.error('Error fetching suggestions:', e);
+				claimsWithSuggestions = claimsWithSuggestions.map((c, i) =>
+					i === index ? { ...c, suggestions: [], isLoading: false } : c
+				);
+			}
+		}
+	}
+
+	// Handle detection results
+	function handleDetectionComplete(detectedClaims: CitationClaim[]) {
+		isDetecting = false;
+
+		if (detectedClaims.length === 0) {
+			claimsWithSuggestions = [];
+			return;
+		}
+
+		// Create abort controller for suggestion fetches
+		const suggestionsAbortController = new AbortController();
+
+		// Initialize claims with loading state
+		claimsWithSuggestions = detectedClaims.map((claim) => ({
+			claim,
+			suggestions: [],
+			isLoading: true
+		}));
+
+		// Fetch suggestions for each claim
+		detectedClaims.forEach((claim, index) => {
+			fetchSuggestionsForClaim(claim, index, suggestionsAbortController.signal);
+		});
+	}
+
+	// Handle text changes from editor
+	function handleTextChange() {
+		if (!editorRef) return;
+		const text = editorRef.getText();
+		citationDetector.detect(text, {
+			onStart: () => {
+				isDetecting = true;
+			},
+			onComplete: handleDetectionComplete
+		});
+	}
+
+	// Cleanup on unmount
+	onMount(() => {
+		return () => {
+			citationDetector.cancel();
+		};
+	});
 
 	function handleClaimClick(claim: CitationClaim, index: number) {
 		activeClaimIndex = index;
@@ -95,7 +176,7 @@
 	</header>
 	<div class="content-layout">
 		<div class="editor-area">
-			<Editor bind:this={editorRef} {claims} onClaimClick={handleClaimClick} />
+			<Editor bind:this={editorRef} {claims} onClaimClick={handleClaimClick} onTextChange={handleTextChange} />
 			<div class="bibliography-area">
 				<Bibliography entries={bibliography} onRemove={handleRemoveCitation} />
 			</div>

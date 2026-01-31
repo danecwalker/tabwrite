@@ -6,9 +6,10 @@
 	interface Props {
 		claims?: CitationClaim[];
 		onClaimClick?: (claim: CitationClaim, index: number) => void;
+		onTextChange?: () => void;
 	}
 
-	let { claims = [], onClaimClick }: Props = $props();
+	let { claims = [], onClaimClick, onTextChange }: Props = $props();
 
 	let editorElement: HTMLDivElement;
 	let pendingSuggestion = $state('');
@@ -301,6 +302,9 @@
 		isLoading = true;
 
 		const text = getTextContent();
+
+		// Notify parent of text change for citation detection
+		onTextChange?.();
 
 		if (text.length < 10) {
 			isLoading = false;
