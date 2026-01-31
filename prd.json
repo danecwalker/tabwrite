@@ -1,0 +1,131 @@
+{
+  "project": "TabWrite",
+  "branchName": "feature/citation-sidebar",
+  "description": "Citation Sidebar - AI-powered citation suggestions with bibliography management",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Create citation detection API endpoint",
+      "description": "As a system, I need to detect when text contains claims, statistics, or facts that would benefit from citations.",
+      "acceptanceCriteria": [
+        "Create POST /api/citations endpoint",
+        "Accepts essay text and analyzes for citation-worthy claims",
+        "Returns array of { claim: string, searchQuery: string, startIndex: number, endIndex: number }",
+        "Uses LLM to identify statistics, factual claims, and quotations",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Create citation search API endpoint",
+      "description": "As a system, I need to search for relevant academic sources for a given claim.",
+      "acceptanceCriteria": [
+        "Create POST /api/citations/search endpoint",
+        "Accepts a claim/query string",
+        "Returns array of suggested citations with { title, authors, year, url, relevance }",
+        "Uses web search or LLM knowledge to find plausible sources",
+        "Returns 3-5 citation suggestions per query",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Add citation sidebar UI component",
+      "description": "As a user, I want to see a sidebar on the right showing citation suggestions.",
+      "acceptanceCriteria": [
+        "Sidebar appears on the right side of the editor",
+        "Shows list of detected claims needing citations",
+        "Each claim displays with suggested sources below it",
+        "Sidebar is scrollable if content overflows",
+        "Clean, minimal design matching editor aesthetic",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Highlight citation-worthy text in editor",
+      "description": "As a user, I want to see which parts of my text need citations.",
+      "acceptanceCriteria": [
+        "Claims needing citations are subtly highlighted in the editor",
+        "Highlight uses a distinct but non-distracting color (e.g., light yellow underline)",
+        "Clicking highlighted text scrolls sidebar to that claim",
+        "Highlights update as user types (debounced)",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Add citation to text on selection",
+      "description": "As a user, I want to click a suggested citation to add it to my essay.",
+      "acceptanceCriteria": [
+        "Each citation suggestion has an 'Add' button",
+        "Clicking 'Add' inserts inline citation at the relevant text location (e.g., [1])",
+        "Citation is added to the bibliography list",
+        "Inline citation number auto-increments",
+        "Claim highlight is removed after citation is added",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "Display bibliography section",
+      "description": "As a user, I want to see a formatted bibliography of all my citations.",
+      "acceptanceCriteria": [
+        "Bibliography section appears below the editor or in sidebar",
+        "Shows all added citations in numbered list format",
+        "Each entry shows: [n] Author(s). Title. Year. URL",
+        "Citations can be removed with a delete button",
+        "Removing a citation renumbers remaining citations",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-007",
+      "title": "Debounce citation detection",
+      "description": "As a system, I need to efficiently detect citations without overwhelming the API.",
+      "acceptanceCriteria": [
+        "Citation detection triggers after 2 seconds of typing pause",
+        "Only sends text that has changed since last detection",
+        "Shows loading indicator in sidebar while detecting",
+        "Cancels pending requests when user continues typing",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-008",
+      "title": "Persist citations in editor state",
+      "description": "As a user, I want my citations to persist while I'm writing.",
+      "acceptanceCriteria": [
+        "Added citations survive text edits",
+        "Bibliography state is maintained in component",
+        "Inline citation markers [n] are preserved in text",
+        "State could be exported/imported (future enhancement)",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}
