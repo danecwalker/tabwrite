@@ -81,13 +81,18 @@ export const POST: RequestHandler = async ({ request }) => {
 
     let content = response.choices[0]?.message?.content?.trim() || "[]";
 
-    // Strip markdown code blocks if present
-    if (content.startsWith("```")) {
-      // Remove opening fence (```json or ```)
-      content = content.replace(/^```(?:json)?\s*\n?/, "");
-      // Remove closing fence
-      content = content.replace(/\n?```\s*$/, "");
+    // Extract JSON array from response - LLM may wrap in markdown or add commentary
+    function extractJsonArray(text: string): string {
+      // Find the first '[' and last ']' to extract the array
+      const start = text.indexOf("[");
+      const end = text.lastIndexOf("]");
+      if (start !== -1 && end !== -1 && end > start) {
+        return text.slice(start, end + 1);
+      }
+      return "[]";
     }
+
+    content = extractJsonArray(content);
 
     let claims: CitationClaim[] = [];
     try {
