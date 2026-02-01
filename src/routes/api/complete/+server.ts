@@ -8,7 +8,14 @@ function getClient() {
   if (!apiKey) {
     throw new Error("OPENAI_API_KEY is not set");
   }
-  return new OpenAI({ apiKey, baseURL: "https://api.groq.com/openai/v1" });
+  return new OpenAI({
+    apiKey,
+    baseURL: "https://openrouter.ai/api/v1",
+    defaultHeaders: {
+      "HTTP-Referer": "tabwrite.com", // Optional. Site URL for rankings on openrouter.ai.
+      "X-Title": "TabWrite", // Optional. Site title for rankings on openrouter.ai.
+    },
+  });
 }
 
 const SYSTEM_PROMPT_MID_WORD = `You are an intelligent writing assistant providing inline completions for essays.
@@ -54,10 +61,13 @@ CRITICAL RULES:
 4. Deeply understand the topic and direction first.
 5. Match vocabulary, tone, and style exactly.
 6. If uncertain what should come next, output nothing.
+7. NEVER include meta-commentary, notes, or explanations about what you're doing.
+8. NEVER use parentheses with notes like "(Note: ...)" or "(I've...)".
 
 OUTPUT FORMAT:
-- Output ONLY the new sentence start (5-20 words max).
+- Output ONLY the raw completion text (5-20 words max).
 - Start with a space, then capital letter.
+- NO explanations, NO meta-text, NO parenthetical notes.
 - If unsure, return empty.`;
 
 type CompletionContext = "mid-word" | "mid-sentence" | "new-sentence";
@@ -106,7 +116,7 @@ export const POST: RequestHandler = async ({ request }) => {
     const systemPrompt = getPromptForContext(completionContext);
 
     const response = await client.chat.completions.create({
-      model: "llama-3.1-8b-instant",
+      model: "meta-llama/llama-3.1-8b-instruct",
       max_tokens: 40,
       temperature: 0.3,
       messages: [
@@ -123,8 +133,26 @@ export const POST: RequestHandler = async ({ request }) => {
 
     let completion = response.choices[0]?.message?.content?.trim() || "";
 
+    // Filter out meta-commentary and notes
+    // Remove parenthetical notes like "(Note: ...)" or "(I've started...)"
+    completion = completion.replace(/\(Note:.*?\)/gi, "").trim();
+    completion = completion.replace(/\(I've.*?\)/gi, "").trim();
+    completion = completion.replace(/\(This.*?\)/gi, "").trim();
+
+    // If the entire response looks like meta-commentary, return empty
+    if (
+      completion.startsWith("(") ||
+      completion.toLowerCase().startsWith("note:")
+    ) {
+      completion = "";
+    }
+
     // Ensure new sentences start with a space
-    if (completionContext === "new-sentence" && completion && !completion.startsWith(" ")) {
+    if (
+      completionContext === "new-sentence" &&
+      completion &&
+      !completion.startsWith(" ")
+    ) {
       completion = " " + completion;
     }
 

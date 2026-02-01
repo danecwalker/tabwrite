@@ -13,9 +13,10 @@
 		isDetecting?: boolean;
 		activeClaimIndex?: number | null;
 		onAddCitation?: (claim: CitationClaim, suggestion: CitationSuggestion, claimIndex: number) => void;
+		onRefresh?: () => void;
 	}
 
-	let { claims, isDetecting = false, activeClaimIndex = null, onAddCitation }: Props = $props();
+	let { claims, isDetecting = false, activeClaimIndex = null, onAddCitation, onRefresh }: Props = $props();
 
 	export function scrollToClaimByIndex(index: number) {
 		const element = document.getElementById(`claim-${index}`);
@@ -38,6 +39,17 @@
 		{#if isDetecting}
 			<span class="detecting-badge">Scanning...</span>
 		{/if}
+		<button
+			class="refresh-btn"
+			onclick={() => onRefresh?.()}
+			disabled={isDetecting}
+			title="Refresh citations"
+		>
+			<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class:spinning={isDetecting}>
+				<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+				<path d="M21 3v5h-5" />
+			</svg>
+		</button>
 	</header>
 
 	<div class="sidebar-content">
@@ -84,9 +96,15 @@
 												</button>
 											</div>
 											<p class="suggestion-meta">
-												{suggestion.authors.slice(0, 2).join(', ')}{suggestion.authors.length > 2 ? ' et al.' : ''} ({suggestion.year})
+												{suggestion.authors.slice(0, 2).join(', ')}{suggestion.authors.length > 2 ? ' et al.' : ''}
+												{#if suggestion.citationCount}
+													<span class="citation-count">· {suggestion.citationCount} citations</span>
+												{/if}
+												<span class="suggestion-source">· {suggestion.source}</span>
 											</p>
-											<p class="suggestion-relevance">{suggestion.relevance}</p>
+											{#if suggestion.excerpt}
+												<p class="suggestion-excerpt">"{suggestion.excerpt}"</p>
+											{/if}
 										</li>
 									{/each}
 								</ul>
@@ -103,7 +121,7 @@
 	.sidebar {
 		width: 320px;
 		min-width: 320px;
-		height: calc(100vh - 4rem);
+		height: 100vh;
 		background: #fafafa;
 		border-left: 1px solid #e5e7eb;
 		display: flex;
@@ -126,6 +144,42 @@
 		font-weight: 500;
 		color: #374151;
 		margin: 0;
+		flex: 1;
+	}
+
+	.refresh-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 28px;
+		height: 28px;
+		padding: 0;
+		background: transparent;
+		border: 1px solid #e5e7eb;
+		border-radius: 0.375rem;
+		color: #6b7280;
+		cursor: pointer;
+		transition: all 0.15s ease;
+	}
+
+	.refresh-btn:hover:not(:disabled) {
+		background: #f3f4f6;
+		color: #374151;
+		border-color: #d1d5db;
+	}
+
+	.refresh-btn:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.refresh-btn svg.spinning {
+		animation: spin 1s linear infinite;
+	}
+
+	@keyframes spin {
+		from { transform: rotate(0deg); }
+		to { transform: rotate(360deg); }
 	}
 
 	.detecting-badge {
@@ -312,10 +366,24 @@
 		color: #6b7280;
 	}
 
-	.suggestion-relevance {
-		margin: 0.25rem 0 0;
-		font-size: 0.75rem;
+	.suggestion-source {
 		color: #9ca3af;
-		line-height: 1.4;
+	}
+
+	.citation-count {
+		color: #6366f1;
+		font-weight: 500;
+	}
+
+	.suggestion-excerpt {
+		margin: 0.5rem 0 0;
+		font-size: 0.75rem;
+		color: #374151;
+		line-height: 1.5;
+		font-style: italic;
+		background: #f9fafb;
+		padding: 0.5rem;
+		border-radius: 0.25rem;
+		border-left: 2px solid #6366f1;
 	}
 </style>

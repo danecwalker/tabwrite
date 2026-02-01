@@ -6,6 +6,7 @@
 	import { createCitationDetector } from '$lib/debounce';
 	import type { CitationClaim } from './api/citations/+server';
 	import type { CitationSuggestion } from './api/citations/search/+server';
+	import type { BibliographyStyle } from '$lib/utils/bibliographyFormatter';
 
 	interface ClaimWithSuggestions {
 		claim: CitationClaim;
@@ -16,6 +17,7 @@
 	interface BibliographyEntry {
 		number: number;
 		suggestion: CitationSuggestion;
+		citedText?: string; // Track the text that was cited
 	}
 
 	interface EditorRef {
@@ -31,15 +33,13 @@
 	let isDetecting = $state(false);
 	let activeClaimIndex = $state<number | null>(null);
 	let bibliography = $state<BibliographyEntry[]>([]);
+	let bibStyle = $state<BibliographyStyle>('apa');
 	let editorRef = $state<EditorRef | null>(null);
 
-	// Citation detector with 2-second debounce
 	const citationDetector = createCitationDetector(2000);
 
-	// Extract just the claims for the editor
 	let claims = $derived(claimsWithSuggestions.map((c) => c.claim));
 
-	// Fetch suggestions for a single claim
 	async function fetchSuggestionsForClaim(claim: CitationClaim, index: number, signal: AbortSignal) {
 		try {
 			const response = await fetch('/api/citations/search', {
@@ -51,9 +51,8 @@
 
 			if (response.ok) {
 				const data = await response.json();
-				// Update the specific claim with suggestions
 				claimsWithSuggestions = claimsWithSuggestions.map((c, i) =>
-					i === index ? { ...c, suggestions: data.suggestions || [], isLoading: false } : c
+					i === index ? { ...c, suggestions: data.citations || [], isLoading: false } : c
 				);
 			} else {
 				claimsWithSuggestions = claimsWithSuggestions.map((c, i) =>
@@ -70,7 +69,6 @@
 		}
 	}
 
-	// Handle detection results
 	function handleDetectionComplete(detectedClaims: CitationClaim[]) {
 		isDetecting = false;
 
@@ -79,23 +77,41 @@
 			return;
 		}
 
-		// Create abort controller for suggestion fetches
+		// Filter out claims that have already been cited
+		const citedTexts = new Set(bibliography.map((b) => b.citedText).filter(Boolean));
+		const filteredClaims = detectedClaims.filter((claim) => {
+			const claimText = claim.claim.toLowerCase().trim();
+			// Check if this claim text (or very similar) is already cited
+			for (const citedText of citedTexts) {
+				if (citedText && (
+					claimText === citedText ||
+					claimText.includes(citedText) ||
+					citedText.includes(claimText)
+				)) {
+					return false;
+				}
+			}
+			return true;
+		});
+
+		if (filteredClaims.length === 0) {
+			claimsWithSuggestions = [];
+			return;
+		}
+
 		const suggestionsAbortController = new AbortController();
 
-		// Initialize claims with loading state
-		claimsWithSuggestions = detectedClaims.map((claim) => ({
+		claimsWithSuggestions = filteredClaims.map((claim) => ({
 			claim,
 			suggestions: [],
 			isLoading: true
 		}));
 
-		// Fetch suggestions for each claim
-		detectedClaims.forEach((claim, index) => {
+		filteredClaims.forEach((claim, index) => {
 			fetchSuggestionsForClaim(claim, index, suggestionsAbortController.signal);
 		});
 	}
 
-	// Handle text changes from editor
 	function handleTextChange() {
 		if (!editorRef) return;
 		const text = editorRef.getText();
@@ -107,7 +123,29 @@
 		});
 	}
 
-	// Cleanup on unmount
+	function handleRefresh() {
+		if (!editorRef || isDetecting) return;
+		const text = editorRef.getText();
+		if (text.length < 50) return;
+
+		citationDetector.cancel();
+		isDetecting = true;
+
+		fetch('/api/citations', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ text })
+		})
+			.then((res) => res.json())
+			.then((data) => {
+				handleDetectionComplete(data.claims || []);
+			})
+			.catch((err) => {
+				console.error('Refresh error:', err);
+				isDetecting = false;
+			});
+	}
+
 	onMount(() => {
 		return () => {
 			citationDetector.cancel();
@@ -116,24 +154,23 @@
 
 	function handleClaimClick(claim: CitationClaim, index: number) {
 		activeClaimIndex = index;
-		// Clear active state after a short delay
 		setTimeout(() => {
 			activeClaimIndex = null;
 		}, 2000);
 	}
 
 	function handleAddCitation(claim: CitationClaim, suggestion: CitationSuggestion, claimIndex: number) {
-		// Calculate next citation number
 		const citationNumber = bibliography.length + 1;
-
-		// Insert inline citation at the end of the claim
 		const inserted = editorRef?.insertCitationAtIndex(claim.endIndex, citationNumber);
 
 		if (inserted) {
-			// Add to bibliography
-			bibliography = [...bibliography, { number: citationNumber, suggestion }];
-
-			// Remove the claim from the list (removes highlight)
+			// Store the cited text to prevent re-detecting it
+			bibliography = [...bibliography, {
+				number: citationNumber,
+				suggestion,
+				citedText: claim.claim.toLowerCase().trim()
+			}];
+			// Remove the claim from the list - this will trigger re-rendering and remove the highlight
 			claimsWithSuggestions = claimsWithSuggestions.filter((_, i) => i !== claimIndex);
 		}
 	}
@@ -142,13 +179,10 @@
 		const removedEntry = bibliography[index];
 		const removedNumber = removedEntry.number;
 
-		// Remove the inline citation from the editor
 		editorRef?.removeCitationByNumber(removedNumber);
 
-		// Remove from bibliography
 		const newBibliography = bibliography.filter((_, i) => i !== index);
 
-		// Create mapping for renumbering: old number -> new number
 		const oldToNew = new Map<number, number>();
 		newBibliography.forEach((entry, i) => {
 			const newNumber = i + 1;
@@ -158,12 +192,15 @@
 			}
 		});
 
-		// Update inline citations in the editor if needed
 		if (oldToNew.size > 0) {
 			editorRef?.updateCitationNumbers(oldToNew);
 		}
 
 		bibliography = newBibliography;
+	}
+
+	function handleBibStyleChange(style: BibliographyStyle) {
+		bibStyle = style;
 	}
 </script>
 
@@ -176,18 +213,27 @@
 	<header>
 		<h1>TabWrite</h1>
 	</header>
-	<div class="content-layout">
-		<div class="editor-area">
-			<Editor bind:this={editorRef} {claims} onClaimClick={handleClaimClick} onTextChange={handleTextChange} />
-			<div class="bibliography-area">
-				<Bibliography entries={bibliography} onRemove={handleRemoveCitation} />
-			</div>
+	<div class="editor-area">
+		<Editor
+			bind:this={editorRef}
+			{claims}
+			{bibliography}
+			{bibStyle}
+			onClaimClick={handleClaimClick}
+			onTextChange={handleTextChange}
+			onBibStyleChange={handleBibStyleChange}
+		/>
+		<div class="bibliography-area">
+			<Bibliography entries={bibliography} style={bibStyle} onRemove={handleRemoveCitation} />
 		</div>
+	</div>
+	<div class="sidebar-container">
 		<CitationSidebar
 			claims={claimsWithSuggestions}
 			{isDetecting}
 			{activeClaimIndex}
 			onAddCitation={handleAddCitation}
+			onRefresh={handleRefresh}
 		/>
 	</div>
 </main>
@@ -195,13 +241,14 @@
 <style>
 	main {
 		min-height: 100vh;
-		padding: 2rem;
-		background: linear-gradient(to bottom, #fafafa, #ffffff);
+		padding: 1.5rem;
+		padding-right: 340px;
+		background: #d1d5db;
 	}
 
 	header {
 		text-align: center;
-		margin-bottom: 2rem;
+		margin-bottom: 1.5rem;
 	}
 
 	h1 {
@@ -212,21 +259,21 @@
 		letter-spacing: 0.05em;
 	}
 
-	.content-layout {
-		display: flex;
-		gap: 0;
-		max-width: 1200px;
-		margin: 0 auto;
-	}
-
 	.editor-area {
-		flex: 1;
-		min-width: 0;
+		max-width: 900px;
+		margin: 0 auto;
 	}
 
 	.bibliography-area {
-		max-width: 700px;
-		margin: 0 auto;
-		padding: 0 2rem;
+		max-width: 816px;
+		margin: 1.5rem auto 0;
+	}
+
+	.sidebar-container {
+		position: fixed;
+		top: 0;
+		right: 0;
+		height: 100vh;
+		z-index: 100;
 	}
 </style>

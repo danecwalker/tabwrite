@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { CitationSuggestion } from '../../routes/api/citations/search/+server';
+	import { formatCitation, type BibliographyStyle } from '$lib/utils/bibliographyFormatter';
 
 	interface BibliographyEntry {
 		number: number;
@@ -8,35 +9,25 @@
 
 	interface Props {
 		entries: BibliographyEntry[];
+		style?: BibliographyStyle;
 		onRemove?: (index: number) => void;
 	}
 
-	let { entries, onRemove }: Props = $props();
+	let { entries, style = 'apa', onRemove }: Props = $props();
 </script>
 
 {#if entries.length > 0}
 	<section class="bibliography">
 		<header class="bibliography-header">
-			<h3>Bibliography</h3>
+			<h3>References</h3>
 			<span class="entry-count">{entries.length} {entries.length === 1 ? 'source' : 'sources'}</span>
 		</header>
 		<ol class="bibliography-list">
 			{#each entries as entry, index (entry.suggestion.url)}
+				{@const formatted = formatCitation(entry, style)}
 				<li class="bibliography-entry">
-					<span class="entry-number">[{entry.number}]</span>
 					<div class="entry-content">
-						<span class="entry-authors">
-							{entry.suggestion.authors.join(', ')}.
-						</span>
-						<span class="entry-title">
-							<a href={entry.suggestion.url} target="_blank" rel="noopener noreferrer">
-								{entry.suggestion.title}
-							</a>.
-						</span>
-						<span class="entry-year">{entry.suggestion.year}.</span>
-						<span class="entry-url">
-							{entry.suggestion.url}
-						</span>
+						{@html formatted.html}
 					</div>
 					<button
 						class="remove-btn"
@@ -105,49 +96,25 @@
 		background: #f9fafb;
 	}
 
-	.entry-number {
-		flex-shrink: 0;
-		font-family: 'Georgia', 'Times New Roman', serif;
-		font-size: 0.8125rem;
-		font-weight: 600;
-		color: #6366f1;
-		min-width: 2rem;
-	}
-
 	.entry-content {
 		flex: 1;
 		font-size: 0.8125rem;
-		line-height: 1.5;
+		line-height: 1.6;
 		color: #374151;
 	}
 
-	.entry-authors {
-		color: #374151;
-	}
-
-	.entry-title {
+	.entry-content :global(em) {
 		font-style: italic;
 	}
 
-	.entry-title a {
+	.entry-content :global(a) {
 		color: #2563eb;
 		text-decoration: none;
-	}
-
-	.entry-title a:hover {
-		text-decoration: underline;
-	}
-
-	.entry-year {
-		color: #6b7280;
-	}
-
-	.entry-url {
-		display: block;
-		margin-top: 0.25rem;
-		font-size: 0.75rem;
-		color: #9ca3af;
 		word-break: break-all;
+	}
+
+	.entry-content :global(a:hover) {
+		text-decoration: underline;
 	}
 
 	.remove-btn {

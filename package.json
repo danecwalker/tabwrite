@@ -6,7 +6,9 @@
 		"@sveltejs/kit": "^2.50.1",
 		"@sveltejs/vite-plugin-svelte": "^6.2.4",
 		"@tailwindcss/vite": "^4.1.18",
+		"@types/xml2js": "^0.4.14",
 		"svelte": "^5.48.2",
+		"svelte-adapter-bun": "^1.0.1",
 		"svelte-check": "^4.3.5",
 		"tailwindcss": "^4.1.18",
 		"typescript": "^5.9.3",
@@ -23,6 +25,10 @@
 	},
 	"type": "module",
 	"dependencies": {
-		"openai": "^6.17.0"
+		"axios": "^1.13.4",
+		"html2canvas": "^1.4.1",
+		"jspdf": "^4.0.0",
+		"openai": "^6.17.0",
+		"xml2js": "^0.6.2"
 	}
 }

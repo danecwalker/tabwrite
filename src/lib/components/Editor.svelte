@@ -1,16 +1,38 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { createDebouncedFetcher } from '$lib/debounce';
+	import EditorToolbar from './EditorToolbar.svelte';
+	import { formatBibliography, type BibliographyStyle } from '$lib/utils/bibliographyFormatter';
 	import type { CitationClaim } from '../../routes/api/citations/+server';
+	import type { CitationSuggestion } from '../../routes/api/citations/search/+server';
+
+	interface BibEntry {
+		number: number;
+		suggestion: CitationSuggestion;
+	}
 
 	interface Props {
 		claims?: CitationClaim[];
+		bibliography?: BibEntry[];
 		onClaimClick?: (claim: CitationClaim, index: number) => void;
 		onTextChange?: () => void;
+		documentTitle?: string;
+		bibStyle?: BibliographyStyle;
+		onBibStyleChange?: (style: BibliographyStyle) => void;
 	}
 
-	let { claims = [], onClaimClick, onTextChange }: Props = $props();
+	let {
+		claims = [],
+		bibliography = [],
+		onClaimClick,
+		onTextChange,
+		documentTitle = 'Untitled Document',
+		bibStyle = 'apa',
+		onBibStyleChange
+	}: Props = $props();
 
+	let isExporting = $state(false);
+	let currentFont = $state('Georgia');
 	let editorElement: HTMLDivElement;
 	let pendingSuggestion = $state('');
 	let isLoading = $state(false);
@@ -20,24 +42,22 @@
 	const HIGHLIGHT_CLASS = 'citation-highlight';
 	const INLINE_CITATION_CLASS = 'inline-citation';
 
+	// A4 page dimensions (in pixels at 96dpi)
+	const PAGE_WIDTH = 816; // 8.5 inches
+	const PAGE_HEIGHT = 1056; // 11 inches
+	const PAGE_PADDING = 96; // 1 inch margins
+
 	function getTextContent(): string {
-		// Get text content excluding ghost text and inline citations
-		// (highlights are fine since we just read their text)
 		const clone = editorElement.cloneNode(true) as HTMLElement;
-		const ghostElements = clone.querySelectorAll(`.${GHOST_CLASS}`);
-		ghostElements.forEach((el) => el.remove());
-		// Also exclude inline citations so indices match the original text
-		const citationElements = clone.querySelectorAll(`.${INLINE_CITATION_CLASS}`);
-		citationElements.forEach((el) => el.remove());
+		clone.querySelectorAll(`.${GHOST_CLASS}`).forEach((el) => el.remove());
+		clone.querySelectorAll(`.${INLINE_CITATION_CLASS}`).forEach((el) => el.remove());
 		return clone.innerText || '';
 	}
 
-	// Expose text content getter for parent components
 	export function getText(): string {
 		return getTextContent();
 	}
 
-	// Update all inline citation numbers (for renumbering after deletion)
 	export function updateCitationNumbers(oldToNew: Map<number, number>): void {
 		const citations = editorElement.querySelectorAll(`.${INLINE_CITATION_CLASS}`);
 		citations.forEach((citation) => {
@@ -53,97 +73,67 @@
 		});
 	}
 
-	// Remove an inline citation by its number
 	export function removeCitationByNumber(citationNumber: number): void {
 		const citations = editorElement.querySelectorAll(`.${INLINE_CITATION_CLASS}`);
 		citations.forEach((citation) => {
-			const text = citation.textContent || '';
-			if (text === `[${citationNumber}]`) {
+			if (citation.textContent === `[${citationNumber}]`) {
 				citation.remove();
 			}
 		});
 	}
 
-	// Get the count of inline citations currently in the editor
 	export function getInlineCitationCount(): number {
 		return editorElement.querySelectorAll(`.${INLINE_CITATION_CLASS}`).length;
 	}
 
-	// Get all inline citation numbers currently in the editor (for state verification)
 	export function getInlineCitationNumbers(): number[] {
 		const citations = editorElement.querySelectorAll(`.${INLINE_CITATION_CLASS}`);
 		const numbers: number[] = [];
 		citations.forEach((citation) => {
-			const text = citation.textContent || '';
-			const match = text.match(/\[(\d+)\]/);
-			if (match) {
-				numbers.push(parseInt(match[1], 10));
-			}
+			const match = (citation.textContent || '').match(/\[(\d+)\]/);
+			if (match) numbers.push(parseInt(match[1], 10));
 		});
 		return numbers.sort((a, b) => a - b);
 	}
 
-	// Insert inline citation at a specific position (end of claim)
 	export function insertCitationAtIndex(endIndex: number, citationNumber: number): boolean {
-		const citationText = `[${citationNumber}]`;
-
-		// First remove any existing highlights to work with clean text
 		removeHighlights();
 
-		const walker = document.createTreeWalker(
-			editorElement,
-			NodeFilter.SHOW_TEXT,
-			{
-				acceptNode: (node) => {
-					// Skip ghost text and inline citations
-					const parent = node.parentElement;
-					if (parent?.classList.contains(GHOST_CLASS) ||
-						parent?.classList.contains(INLINE_CITATION_CLASS)) {
-						return NodeFilter.FILTER_REJECT;
-					}
-					return NodeFilter.FILTER_ACCEPT;
+		const walker = document.createTreeWalker(editorElement, NodeFilter.SHOW_TEXT, {
+			acceptNode: (node) => {
+				const parent = node.parentElement;
+				if (parent?.classList.contains(GHOST_CLASS) || parent?.classList.contains(INLINE_CITATION_CLASS)) {
+					return NodeFilter.FILTER_REJECT;
 				}
+				return NodeFilter.FILTER_ACCEPT;
 			}
-		);
+		});
 
 		let currentOffset = 0;
 		let node: Text | null;
 
 		while ((node = walker.nextNode() as Text | null)) {
-			const nodeLength = node.length;
 			const nodeStart = currentOffset;
-			const nodeEnd = currentOffset + nodeLength;
+			const nodeEnd = currentOffset + node.length;
 
-			// Check if this node contains our target position
 			if (nodeStart <= endIndex && endIndex <= nodeEnd) {
 				const relativeOffset = endIndex - nodeStart;
-
-				// Split the text node at the insertion point
 				if (relativeOffset < node.length) {
 					node.splitText(relativeOffset);
 				}
 
-				// Create citation marker span
 				const citationSpan = document.createElement('span');
 				citationSpan.className = INLINE_CITATION_CLASS;
-				citationSpan.textContent = citationText;
+				citationSpan.textContent = `[${citationNumber}]`;
 				citationSpan.contentEditable = 'false';
 
-				// Insert after the current node
-				const parent = node.parentNode;
-				if (parent) {
-					parent.insertBefore(citationSpan, node.nextSibling);
-				}
+				node.parentNode?.insertBefore(citationSpan, node.nextSibling);
 
-				// Re-apply highlights for remaining claims
-				applyHighlights();
-
+				// Don't re-apply highlights - they'll be updated when claims change
 				return true;
 			}
-
-			currentOffset += nodeLength;
+			currentOffset += node.length;
 		}
-
 		return false;
 	}
 
@@ -152,151 +142,101 @@
 		highlights.forEach((el) => {
 			const parent = el.parentNode;
 			if (parent) {
-				// Replace highlight span with its text content
 				const textNode = document.createTextNode(el.textContent || '');
 				parent.replaceChild(textNode, el);
-				// Normalize to merge adjacent text nodes
 				parent.normalize();
 			}
 		});
 	}
 
 	function applyHighlights() {
-		if (!claims || claims.length === 0) return;
-
-		// Save cursor position
-		const selection = window.getSelection();
-		let savedOffset = 0;
-		let savedNode: Node | null = null;
-
-		if (selection && selection.rangeCount > 0) {
-			const range = selection.getRangeAt(0);
-			savedNode = range.startContainer;
-			savedOffset = range.startOffset;
+		if (!claims || claims.length === 0) {
+			removeHighlights();
+			return;
 		}
 
-		// Remove existing highlights first
 		removeHighlights();
-
-		// Get the plain text content
 		const text = getTextContent();
-
-		// Sort claims by startIndex (descending) to apply from end to beginning
-		// This prevents index shifting issues
 		const sortedClaims = [...claims].sort((a, b) => b.startIndex - a.startIndex);
 
-		// Apply highlights
 		for (const claim of sortedClaims) {
 			const { startIndex, endIndex } = claim;
 			if (startIndex < 0 || endIndex > text.length || startIndex >= endIndex) continue;
 
-			// Find the text node(s) containing this range
-			const walker = document.createTreeWalker(
-				editorElement,
-				NodeFilter.SHOW_TEXT,
-				{
-					acceptNode: (node) => {
-						// Skip ghost text and inline citations
-						const parent = node.parentElement;
-						if (parent?.classList.contains(GHOST_CLASS) ||
-							parent?.classList.contains(INLINE_CITATION_CLASS)) {
-							return NodeFilter.FILTER_REJECT;
-						}
-						return NodeFilter.FILTER_ACCEPT;
+			const walker = document.createTreeWalker(editorElement, NodeFilter.SHOW_TEXT, {
+				acceptNode: (node) => {
+					const parent = node.parentElement;
+					if (parent?.classList.contains(GHOST_CLASS) || parent?.classList.contains(INLINE_CITATION_CLASS)) {
+						return NodeFilter.FILTER_REJECT;
 					}
+					return NodeFilter.FILTER_ACCEPT;
 				}
-			);
+			});
 
 			let currentOffset = 0;
 			let node: Text | null;
 
 			while ((node = walker.nextNode() as Text | null)) {
-				const nodeLength = node.length;
 				const nodeStart = currentOffset;
-				const nodeEnd = currentOffset + nodeLength;
+				const nodeEnd = currentOffset + node.length;
 
-				// Check if this node contains the start of our highlight
 				if (nodeStart <= startIndex && startIndex < nodeEnd) {
 					const relativeStart = startIndex - nodeStart;
-					const highlightLength = Math.min(endIndex - startIndex, nodeLength - relativeStart);
-
-					// Split the text node if needed
+					const highlightLength = Math.min(endIndex - startIndex, node.length - relativeStart);
 					const claimIndex = claims.indexOf(claim);
 
-					// Create highlight span
 					const highlightSpan = document.createElement('span');
 					highlightSpan.className = HIGHLIGHT_CLASS;
 					highlightSpan.dataset.claimIndex = String(claimIndex);
-					highlightSpan.addEventListener('click', () => {
-						onClaimClick?.(claim, claimIndex);
-					});
+					highlightSpan.addEventListener('click', () => onClaimClick?.(claim, claimIndex));
 
-					// If highlight doesn't start at beginning of node, split
 					if (relativeStart > 0) {
 						node.splitText(relativeStart);
 						node = node.nextSibling as Text;
 					}
-
-					// If highlight doesn't go to end of node, split
 					if (highlightLength < node.length) {
 						node.splitText(highlightLength);
 					}
 
-					// Wrap the node in highlight span
-					const parent = node.parentNode;
-					if (parent) {
-						parent.insertBefore(highlightSpan, node);
-						highlightSpan.appendChild(node);
-					}
-
+					node.parentNode?.insertBefore(highlightSpan, node);
+					highlightSpan.appendChild(node);
 					break;
 				}
-
-				currentOffset += nodeLength;
+				currentOffset += node.length;
 			}
 		}
-
-		// Restore cursor position (simplified - just focus)
 		editorElement.focus();
 	}
 
-	// Apply highlights when claims change
 	$effect(() => {
-		if (claims && editorElement) {
+		if (editorElement) {
 			applyHighlights();
 		}
 	});
 
 	function removeGhostText() {
-		const ghostElements = editorElement.querySelectorAll(`.${GHOST_CLASS}`);
-		ghostElements.forEach((el) => el.remove());
+		editorElement.querySelectorAll(`.${GHOST_CLASS}`).forEach((el) => el.remove());
 		pendingSuggestion = '';
 	}
 
 	function insertGhostText(text: string) {
 		removeGhostText();
-
 		const selection = window.getSelection();
 		if (!selection || selection.rangeCount === 0) return;
 
 		const range = selection.getRangeAt(0);
 		if (!range.collapsed) return;
 
-		// Create ghost span
 		const ghostSpan = document.createElement('span');
 		ghostSpan.className = GHOST_CLASS;
 		ghostSpan.textContent = text;
 		ghostSpan.contentEditable = 'false';
 
-		// Insert at cursor
 		range.insertNode(ghostSpan);
-
-		// Move cursor before the ghost span
 		range.setStartBefore(ghostSpan);
 		range.setEndBefore(ghostSpan);
 		selection.removeAllRanges();
 		selection.addRange(range);
-
 		pendingSuggestion = text;
 	}
 
@@ -304,13 +244,9 @@
 		const ghostElement = editorElement.querySelector(`.${GHOST_CLASS}`);
 		if (!ghostElement || !pendingSuggestion) return;
 
-		const text = pendingSuggestion;
-
-		// Replace ghost span with actual text node
-		const textNode = document.createTextNode(text);
+		const textNode = document.createTextNode(pendingSuggestion);
 		ghostElement.replaceWith(textNode);
 
-		// Move cursor to end of inserted text
 		const selection = window.getSelection();
 		if (selection) {
 			const range = document.createRange();
@@ -319,20 +255,14 @@
 			selection.removeAllRanges();
 			selection.addRange(range);
 		}
-
 		pendingSuggestion = '';
-
-		// Trigger a new completion request
 		handleInput();
 	}
 
 	function handleInput() {
 		removeGhostText();
 		isLoading = true;
-
 		const text = getTextContent();
-
-		// Notify parent of text change for citation detection
 		onTextChange?.();
 
 		if (text.length < 10) {
@@ -341,9 +271,7 @@
 		}
 
 		fetcher.fetch(text, (completion) => {
-			if (completion) {
-				insertGhostText(completion);
-			}
+			if (completion) insertGhostText(completion);
 			isLoading = false;
 		});
 	}
@@ -358,7 +286,6 @@
 			fetcher.cancel();
 			isLoading = false;
 		} else if (pendingSuggestion && !event.ctrlKey && !event.metaKey && !event.altKey) {
-			// Any other typing dismisses the ghost text
 			if (event.key.length === 1 || event.key === 'Backspace' || event.key === 'Delete') {
 				removeGhostText();
 			}
@@ -366,39 +293,169 @@
 	}
 
 	function handleBeforeInput() {
-		// Remove ghost text before any input happens
-		if (pendingSuggestion) {
-			removeGhostText();
-		}
+		if (pendingSuggestion) removeGhostText();
 	}
 
 	onMount(() => {
 		editorElement.focus();
-		return () => {
-			fetcher.cancel();
-		};
+		return () => fetcher.cancel();
 	});
+
+	function handleFormat(command: string, value?: string) {
+		editorElement.focus();
+		if (command === 'insertBlockquote') {
+			document.execCommand('formatBlock', false, 'blockquote');
+		} else if (command === 'formatBlock') {
+			document.execCommand('formatBlock', false, `<${value}>`);
+		} else {
+			document.execCommand(command, false, value);
+		}
+		onTextChange?.();
+	}
+
+	function handleFontChange(font: string) {
+		currentFont = font;
+	}
+
+	function handleBibStyleChange(style: string) {
+		onBibStyleChange?.(style as BibliographyStyle);
+	}
+
+	async function handleExportPdf() {
+		if (isExporting) return;
+		isExporting = true;
+
+		try {
+			const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([
+				import('jspdf'),
+				import('html2canvas')
+			]);
+
+			// Create container for PDF content
+			const pdfContainer = document.createElement('div');
+			pdfContainer.style.cssText = `
+				width: ${PAGE_WIDTH}px;
+				padding: ${PAGE_PADDING}px;
+				background: #ffffff;
+				position: absolute;
+				left: -9999px;
+				font-family: ${currentFont}, serif;
+				font-size: 12pt;
+				line-height: 1.6;
+				color: #000000;
+			`;
+
+			// Clone editor content
+			const editorClone = editorElement.cloneNode(true) as HTMLElement;
+			editorClone.querySelectorAll(`.${GHOST_CLASS}`).forEach((el) => el.remove());
+			editorClone.querySelectorAll(`.${HIGHLIGHT_CLASS}`).forEach((el) => {
+				const text = document.createTextNode(el.textContent || '');
+				el.parentNode?.replaceChild(text, el);
+			});
+			// Apply font to all cloned elements
+			editorClone.style.cssText = `font-family: ${currentFont}, serif;`;
+			editorClone.querySelectorAll('*').forEach((el) => {
+				if (el instanceof HTMLElement) {
+					el.style.fontFamily = `${currentFont}, serif`;
+				}
+			});
+			pdfContainer.appendChild(editorClone);
+
+			// Add bibliography if entries exist
+			if (bibliography.length > 0) {
+				const bibSection = document.createElement('div');
+				bibSection.style.cssText = `margin-top: 48px; padding-top: 24px; border-top: 1px solid #ccc; font-family: ${currentFont}, serif;`;
+
+				const bibTitle = document.createElement('h2');
+				bibTitle.textContent = 'References';
+				bibTitle.style.cssText = `font-size: 18pt; margin-bottom: 16px; font-weight: bold; font-family: ${currentFont}, serif;`;
+				bibSection.appendChild(bibTitle);
+
+				const bibContent = document.createElement('div');
+				bibContent.style.cssText = `font-size: 11pt; line-height: 1.8; font-family: ${currentFont}, serif;`;
+				// Use current bibStyle value
+				const currentBibStyle = bibStyle;
+				bibContent.innerHTML = formatBibliography(bibliography, currentBibStyle).html;
+				bibSection.appendChild(bibContent);
+
+				pdfContainer.appendChild(bibSection);
+			}
+
+			document.body.appendChild(pdfContainer);
+
+			const canvas = await html2canvas(pdfContainer, {
+				scale: 2,
+				useCORS: true,
+				logging: false,
+				backgroundColor: '#ffffff'
+			});
+
+			document.body.removeChild(pdfContainer);
+
+			const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' });
+			const pageWidth = pdf.internal.pageSize.getWidth();
+			const pageHeight = pdf.internal.pageSize.getHeight();
+
+			const imgWidth = pageWidth;
+			const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+			let heightLeft = imgHeight;
+			let position = 0;
+
+			pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, position, imgWidth, imgHeight);
+			heightLeft -= pageHeight;
+
+			while (heightLeft > 0) {
+				position = heightLeft - imgHeight;
+				pdf.addPage();
+				pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, position, imgWidth, imgHeight);
+				heightLeft -= pageHeight;
+			}
+
+			const filename = documentTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'document';
+			pdf.save(`${filename}.pdf`);
+		} catch (error) {
+			console.error('PDF export failed:', error);
+			alert('Failed to export PDF. Please try again.');
+		} finally {
+			isExporting = false;
+		}
+	}
 </script>
 
-<div class="editor-container">
-	<div
-		class="editor"
-		bind:this={editorElement}
-		contenteditable="true"
-		oninput={handleInput}
-		onkeydown={handleKeyDown}
-		onbeforeinput={handleBeforeInput}
-		role="textbox"
-		tabindex="0"
-		aria-multiline="true"
-		aria-label="Essay editor"
-	></div>
+<div class="editor-wrapper">
+	<EditorToolbar
+		onFormat={handleFormat}
+		onExportPdf={handleExportPdf}
+		onFontChange={handleFontChange}
+		onBibStyleChange={handleBibStyleChange}
+		{isExporting}
+		{currentFont}
+		currentBibStyle={bibStyle}
+	/>
 
-	{#if isLoading && !pendingSuggestion}
-		<div class="loading-indicator">
-			<span class="loading-dot"></span>
+	<div class="pages-container">
+		<div class="page" style="--editor-font: {currentFont}">
+			<div
+				class="editor"
+				bind:this={editorElement}
+				contenteditable="true"
+				oninput={handleInput}
+				onkeydown={handleKeyDown}
+				onbeforeinput={handleBeforeInput}
+				role="textbox"
+				tabindex="0"
+				aria-multiline="true"
+				aria-label="Essay editor"
+			></div>
+
+			{#if isLoading && !pendingSuggestion}
+				<div class="loading-indicator">
+					<span class="loading-dot"></span>
+				</div>
+			{/if}
 		</div>
-	{/if}
+	</div>
 </div>
 
 <div class="hint">
@@ -412,33 +469,106 @@
 </div>
 
 <style>
-	.editor-container {
-		position: relative;
+	.editor-wrapper {
 		width: 100%;
-		max-width: 700px;
-		min-height: 70vh;
+		max-width: 900px;
 		margin: 0 auto;
+	}
+
+	.pages-container {
+		background: #e5e7eb;
+		padding: 2rem;
+		border-radius: 0.5rem;
+		min-height: 80vh;
+	}
+
+	.page {
+		position: relative;
+		width: 8.5in;
+		min-height: 11in;
+		margin: 0 auto;
+		background: #ffffff;
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+		padding: 1in;
+		box-sizing: border-box;
+		font-family: var(--editor-font), serif;
 	}
 
 	.editor {
 		width: 100%;
-		min-height: 70vh;
-		padding: 2rem;
-		font-family: 'Georgia', 'Times New Roman', serif;
-		font-size: 1.25rem;
-		line-height: 1.8;
-		color: #1a1a1a;
+		min-height: calc(11in - 2in);
+		font-family: var(--editor-font), serif;
+		font-size: 12pt;
+		line-height: 1.6;
+		color: #000000;
 		background: transparent;
 		border: none;
 		outline: none;
-		white-space: pre-wrap;
 		word-wrap: break-word;
+	}
+
+	/* Ensure all elements inherit the font */
+	.editor :global(*) {
+		font-family: inherit;
 	}
 
 	.editor:empty::before {
 		content: 'Start writing your essay...';
 		color: #9ca3af;
 		pointer-events: none;
+	}
+
+	/* Heading styles */
+	.editor :global(h1) {
+		font-size: 24pt;
+		font-weight: bold;
+		line-height: 1.3;
+		margin: 18pt 0 12pt 0;
+		color: #000000;
+	}
+
+	.editor :global(h2) {
+		font-size: 18pt;
+		font-weight: bold;
+		line-height: 1.4;
+		margin: 14pt 0 8pt 0;
+		color: #000000;
+	}
+
+	.editor :global(h3) {
+		font-size: 14pt;
+		font-weight: bold;
+		line-height: 1.5;
+		margin: 12pt 0 6pt 0;
+		color: #000000;
+	}
+
+	.editor :global(p) {
+		margin: 0 0 12pt 0;
+	}
+
+	.editor :global(ul),
+	.editor :global(ol) {
+		margin: 6pt 0 12pt 24pt;
+		padding: 0;
+	}
+
+	.editor :global(li) {
+		margin: 3pt 0;
+	}
+
+	.editor :global(blockquote) {
+		margin: 12pt 0 12pt 24pt;
+		padding: 0 0 0 12pt;
+		border-left: 3pt solid #6366f1;
+		font-style: italic;
+		color: #4b5563;
+	}
+
+	.editor :global(hr) {
+		border: none;
+		border-top: 1pt solid #d1d5db;
+		margin: 24pt 0;
 	}
 
 	.editor :global(.ghost-suggestion) {
@@ -459,7 +589,7 @@
 
 	.editor :global(.inline-citation) {
 		color: #6366f1;
-		font-size: 0.85em;
+		font-size: 0.75em;
 		font-weight: 600;
 		vertical-align: super;
 		font-family: ui-monospace, monospace;
@@ -469,8 +599,8 @@
 
 	.loading-indicator {
 		position: absolute;
-		bottom: 1rem;
-		right: 1rem;
+		bottom: 1in;
+		right: 1in;
 	}
 
 	.loading-dot {
@@ -483,15 +613,8 @@
 	}
 
 	@keyframes pulse {
-		0%,
-		100% {
-			opacity: 0.3;
-			transform: scale(0.8);
-		}
-		50% {
-			opacity: 1;
-			transform: scale(1);
-		}
+		0%, 100% { opacity: 0.3; transform: scale(0.8); }
+		50% { opacity: 1; transform: scale(1); }
 	}
 
 	.hint {
