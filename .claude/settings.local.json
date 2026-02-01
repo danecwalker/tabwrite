@@ -4,7 +4,9 @@
       "Bash(bun add:*)",
       "Bash(bun run check:*)",
       "Bash(bun remove:*)",
-      "Bash(bun run lint)"
+      "Bash(bun run lint)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nfix: Strip markdown code blocks from LLM citation response\n\nThe LLM sometimes returns JSON wrapped in markdown code fences,\ncausing JSON.parse to fail. Now we strip these before parsing.\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
     ]
   }
 }
