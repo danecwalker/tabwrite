@@ -79,7 +79,15 @@ export const POST: RequestHandler = async ({ request }) => {
       ],
     });
 
-    const content = response.choices[0]?.message?.content?.trim() || "[]";
+    let content = response.choices[0]?.message?.content?.trim() || "[]";
+
+    // Strip markdown code blocks if present
+    if (content.startsWith("```")) {
+      // Remove opening fence (```json or ```)
+      content = content.replace(/^```(?:json)?\s*\n?/, "");
+      // Remove closing fence
+      content = content.replace(/\n?```\s*$/, "");
+    }
 
     let claims: CitationClaim[] = [];
     try {
