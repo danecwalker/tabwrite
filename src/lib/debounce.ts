@@ -107,7 +107,7 @@ export function createDebouncedFetcher(delay: number = 500) {
 	let abortController: AbortController | null = null;
 
 	return {
-		fetch: (context: string, onComplete: (completion: string) => void) => {
+		fetch: (prefix: string, suffix: string, onComplete: (completion: string) => void) => {
 			// Cancel any pending request
 			if (timeoutId) {
 				clearTimeout(timeoutId);
@@ -123,7 +123,7 @@ export function createDebouncedFetcher(delay: number = 500) {
 					const response = await fetch('/api/complete', {
 						method: 'POST',
 						headers: { 'Content-Type': 'application/json' },
-						body: JSON.stringify({ context }),
+						body: JSON.stringify({ prefix, suffix }),
 						signal: abortController.signal
 					});
 

@@ -1,23 +1,8 @@
 import { json } from "@sveltejs/kit";
 import OpenAI from "openai";
-import { env } from "$env/dynamic/private";
 import type { RequestHandler } from "./$types";
 import { getResultsForQuery } from "$lib/tools/searchPapers";
-
-function getClient() {
-  const apiKey = env.OPENAI_API_KEY;
-  if (!apiKey) {
-    throw new Error("OPENAI_API_KEY is not set");
-  }
-  return new OpenAI({
-    apiKey,
-    baseURL: "https://openrouter.ai/api/v1",
-    defaultHeaders: {
-      "HTTP-Referer": "tabwrite.com", // Optional. Site URL for rankings on openrouter.ai.
-      "X-Title": "TabWrite", // Optional. Site title for rankings on openrouter.ai.
-    },
-  });
-}
+import { getOpenAIClient, DEFAULT_MODEL } from "$lib/models/openai";
 
 // Tool definitions in XML format for the prompt
 const TOOLS_XML = `
@@ -348,7 +333,7 @@ Begin by thinking about what this claim means and what kind of academic evidence
     );
 
     const response = await client.chat.completions.create({
-      model: "meta-llama/llama-3.1-8b-instruct",
+      model: DEFAULT_MODEL,
       max_tokens: 1000,
       temperature: 0.2,
       messages: state.messages,
@@ -414,7 +399,7 @@ Begin by thinking about what this claim means and what kind of academic evidence
 
 export const POST: RequestHandler = async ({ request }) => {
   try {
-    const client = getClient();
+    const client = getOpenAIClient();
     const { query } = await request.json();
 
     if (!query || typeof query !== "string") {

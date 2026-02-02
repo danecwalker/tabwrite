@@ -96,6 +96,78 @@
 		return numbers.sort((a, b) => a - b);
 	}
 
+	export function getEditorElement(): HTMLDivElement {
+		return editorElement;
+	}
+
+	export function replaceTextAtRange(range: Range, newText: string): boolean {
+		if (!editorElement.contains(range.commonAncestorContainer)) {
+			return false;
+		}
+
+		try {
+			// Delete the selected range content
+			range.deleteContents();
+
+			// Create a text node with the new content
+			const textNode = document.createTextNode(newText);
+			range.insertNode(textNode);
+
+			// Move cursor to end of inserted text
+			const selection = window.getSelection();
+			if (selection) {
+				const newRange = document.createRange();
+				newRange.setStartAfter(textNode);
+				newRange.setEndAfter(textNode);
+				selection.removeAllRanges();
+				selection.addRange(newRange);
+			}
+
+			// Normalize to merge adjacent text nodes
+			editorElement.normalize();
+			onTextChange?.();
+			return true;
+		} catch (e) {
+			console.error('Failed to replace text:', e);
+			return false;
+		}
+	}
+
+	export function insertTextAfterRange(range: Range, text: string): boolean {
+		if (!editorElement.contains(range.commonAncestorContainer)) {
+			return false;
+		}
+
+		try {
+			// Collapse range to end
+			range.collapse(false);
+
+			// Insert a paragraph break and then the text
+			const wrapper = document.createElement('div');
+			wrapper.innerHTML = '<br><br>' + text.replace(/\n/g, '<br>');
+
+			const fragment = document.createDocumentFragment();
+			while (wrapper.firstChild) {
+				fragment.appendChild(wrapper.firstChild);
+			}
+
+			range.insertNode(fragment);
+
+			// Move cursor to end
+			const selection = window.getSelection();
+			if (selection) {
+				selection.collapseToEnd();
+			}
+
+			editorElement.normalize();
+			onTextChange?.();
+			return true;
+		} catch (e) {
+			console.error('Failed to insert text:', e);
+			return false;
+		}
+	}
+
 	export function insertCitationAtIndex(endIndex: number, citationNumber: number): boolean {
 		removeHighlights();
 
@@ -259,18 +331,57 @@
 		handleInput();
 	}
 
+	function getPrefixAndSuffix(): { prefix: string; suffix: string } {
+		const selection = window.getSelection();
+		if (!selection || selection.rangeCount === 0) {
+			const text = getTextContent();
+			return { prefix: text, suffix: '' };
+		}
+
+		const range = selection.getRangeAt(0);
+		if (!range.collapsed) {
+			const text = getTextContent();
+			return { prefix: text, suffix: '' };
+		}
+
+		// Create a range from start of editor to cursor
+		const preRange = document.createRange();
+		preRange.selectNodeContents(editorElement);
+		preRange.setEnd(range.startContainer, range.startOffset);
+
+		// Create a range from cursor to end of editor
+		const postRange = document.createRange();
+		postRange.selectNodeContents(editorElement);
+		postRange.setStart(range.startContainer, range.startOffset);
+
+		// Get text content, excluding ghost text
+		const getCleanText = (r: Range): string => {
+			const fragment = r.cloneContents();
+			const temp = document.createElement('div');
+			temp.appendChild(fragment);
+			temp.querySelectorAll(`.${GHOST_CLASS}`).forEach((el) => el.remove());
+			temp.querySelectorAll(`.${INLINE_CITATION_CLASS}`).forEach((el) => el.remove());
+			return temp.innerText || '';
+		};
+
+		return {
+			prefix: getCleanText(preRange),
+			suffix: getCleanText(postRange)
+		};
+	}
+
 	function handleInput() {
 		removeGhostText();
 		isLoading = true;
-		const text = getTextContent();
+		const { prefix, suffix } = getPrefixAndSuffix();
 		onTextChange?.();
 
-		if (text.length < 10) {
+		if (prefix.length < 2) {
 			isLoading = false;
 			return;
 		}
 
-		fetcher.fetch(text, (completion) => {
+		fetcher.fetch(prefix, suffix, (completion) => {
 			if (completion) insertGhostText(completion);
 			isLoading = false;
 		});
@@ -294,6 +405,14 @@
 
 	function handleBeforeInput() {
 		if (pendingSuggestion) removeGhostText();
+	}
+
+	function handleMouseDown() {
+		if (pendingSuggestion) {
+			removeGhostText();
+			fetcher.cancel();
+			isLoading = false;
+		}
 	}
 
 	onMount(() => {
@@ -443,6 +562,7 @@
 				oninput={handleInput}
 				onkeydown={handleKeyDown}
 				onbeforeinput={handleBeforeInput}
+				onmousedown={handleMouseDown}
 				role="textbox"
 				tabindex="0"
 				aria-multiline="true"

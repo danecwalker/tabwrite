@@ -3,10 +3,13 @@
 	import Editor from '$lib/components/Editor.svelte';
 	import CitationSidebar from '$lib/components/CitationSidebar.svelte';
 	import Bibliography from '$lib/components/Bibliography.svelte';
+	import SelectionPopover from '$lib/components/SelectionPopover.svelte';
+	import PromptModal from '$lib/components/PromptModal.svelte';
 	import { createCitationDetector } from '$lib/debounce';
 	import type { CitationClaim } from './api/citations/+server';
 	import type { CitationSuggestion } from './api/citations/search/+server';
 	import type { BibliographyStyle } from '$lib/utils/bibliographyFormatter';
+	import type { ActionType } from './api/prompt/+server';
 
 	interface ClaimWithSuggestions {
 		claim: CitationClaim;
@@ -27,6 +30,9 @@
 		getText: () => string;
 		getInlineCitationCount: () => number;
 		getInlineCitationNumbers: () => number[];
+		getEditorElement: () => HTMLDivElement;
+		replaceTextAtRange: (range: Range, newText: string) => boolean;
+		insertTextAfterRange: (range: Range, text: string) => boolean;
 	}
 
 	let claimsWithSuggestions = $state<ClaimWithSuggestions[]>([]);
@@ -35,6 +41,13 @@
 	let bibliography = $state<BibliographyEntry[]>([]);
 	let bibStyle = $state<BibliographyStyle>('apa');
 	let editorRef = $state<EditorRef | null>(null);
+
+	// Prompt feature state
+	let showPromptModal = $state(false);
+	let selectedTextInfo = $state<{ text: string; range: Range } | null>(null);
+	let isPromptProcessing = $state(false);
+
+	let editorElement = $derived(editorRef?.getEditorElement() ?? null);
 
 	const citationDetector = createCitationDetector(2000);
 
@@ -113,14 +126,15 @@
 	}
 
 	function handleTextChange() {
-		if (!editorRef) return;
-		const text = editorRef.getText();
-		citationDetector.detect(text, {
-			onStart: () => {
-				isDetecting = true;
-			},
-			onComplete: handleDetectionComplete
-		});
+		// Citation AI disabled for now
+		// if (!editorRef) return;
+		// const text = editorRef.getText();
+		// citationDetector.detect(text, {
+		// 	onStart: () => {
+		// 		isDetecting = true;
+		// 	},
+		// 	onComplete: handleDetectionComplete
+		// });
 	}
 
 	function handleRefresh() {
@@ -202,6 +216,62 @@
 	function handleBibStyleChange(style: BibliographyStyle) {
 		bibStyle = style;
 	}
+
+	// Prompt feature handlers
+	function handlePromptClick(text: string, range: Range) {
+		selectedTextInfo = { text, range };
+		showPromptModal = true;
+	}
+
+	function handlePromptClose() {
+		showPromptModal = false;
+		selectedTextInfo = null;
+	}
+
+	async function handlePromptSubmit(instruction: string, actionType: ActionType) {
+		if (!selectedTextInfo || !editorRef) return;
+
+		isPromptProcessing = true;
+
+		try {
+			// Get document text for style/context reference
+			const documentContext = editorRef.getText();
+
+			const response = await fetch('/api/prompt', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					selectedText: selectedTextInfo.text,
+					instruction,
+					actionType,
+					documentContext
+				})
+			});
+
+			if (!response.ok) {
+				throw new Error('Failed to process prompt');
+			}
+
+			const data = await response.json();
+			const result = data.result;
+
+			// Apply the result based on action type
+			if (actionType === 'rewrite' || actionType === 'expand' || actionType === 'summarize') {
+				// Replace the selected text
+				editorRef.replaceTextAtRange(selectedTextInfo.range, result);
+			} else {
+				// Insert after selection (analyze, custom by default)
+				editorRef.insertTextAfterRange(selectedTextInfo.range, result);
+			}
+
+			handlePromptClose();
+		} catch (error) {
+			console.error('Prompt error:', error);
+			alert('Failed to process your request. Please try again.');
+		} finally {
+			isPromptProcessing = false;
+		}
+	}
 </script>
 
 <svelte:head>
@@ -236,6 +306,16 @@
 			onRefresh={handleRefresh}
 		/>
 	</div>
+
+	<!-- Prompt feature components -->
+	<SelectionPopover {editorElement} onPromptClick={handlePromptClick} />
+	<PromptModal
+		isOpen={showPromptModal}
+		selectedText={selectedTextInfo?.text ?? ''}
+		isProcessing={isPromptProcessing}
+		onClose={handlePromptClose}
+		onSubmit={handlePromptSubmit}
+	/>
 </main>
 
 <style>
